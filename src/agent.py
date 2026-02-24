@@ -297,9 +297,13 @@ def llm_chat(model: str, messages: List[Dict[str, str]]) -> str:
 # Helpers
 # ----------------------------
 def log_line(text: str) -> None:
-    ts = datetime.now().strftime("%Y-%m-%d")
-    with (LOG_DIR / f"agent_{ts}.log").open("a", encoding="utf-8") as f:
-        f.write(text + "\n")
+    try:
+        ts = datetime.now().strftime("%Y-%m-%d")
+        LOG_DIR.mkdir(exist_ok=True)
+        with (LOG_DIR / f"agent_{ts}.log").open("a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except Exception:
+        pass  # Don't crash if logs dir is read-only (e.g. on some hosts)
 
 
 def extract_first_json_object(s: str) -> Optional[str]:

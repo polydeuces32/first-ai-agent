@@ -22,7 +22,10 @@ if "LLM_BACKEND" not in os.environ:
 from src.agent import process_turn, SYSTEM_PROMPT
 
 # Use PORT and 0.0.0.0 when deployed (e.g. Render, Railway); localhost when local
-PORT = int(os.environ.get("PORT", 8765))
+try:
+    PORT = int(os.environ.get("PORT") or 8765)
+except (TypeError, ValueError):
+    PORT = 8765
 HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 
 # In-memory state (one user)
@@ -112,7 +115,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path != "/chat":
+        path = self.path.split("?")[0]
+        if path != "/chat":
             self.send_response(404)
             self.end_headers()
             return
@@ -140,7 +144,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.end_headers()
-        self.wfile.write(json.dumps(obj).encode("utf-8"))
+        try:
+            body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError):
+            body = json.dumps({"response": str(obj)}).encode("utf-8")
+        self.wfile.write(body)
 
     def log_message(self, *_):
         pass
