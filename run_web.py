@@ -94,7 +94,15 @@ HTML = """<!DOCTYPE html>
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
+        # Serve the app for / and any path (so no "Not Found" on typos or trailing slash)
+        path = self.path.split("?")[0]
+        if path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+        if path == "/" or path == "/index.html" or not path.startswith("/chat"):
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
