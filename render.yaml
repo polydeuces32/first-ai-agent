@@ -1,0 +1,13 @@
+# Render.com blueprint — deploy as Web Service
+# Push this repo to GitHub, then connect the repo in Render and use "Blueprint" or set manually:
+# Build: (leave empty or pip install -r requirements.txt)
+# Start: python run_web.py
+services:
+  - type: web
+    name: first-ai-agent
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_web.py
+    envVars:
+      - key: LLM_BACKEND
+        value: none
