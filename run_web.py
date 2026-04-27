@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
-"""
-Minimal web UI for the agent. No IDE or terminal needed after starting.
-Run: python run_web.py   (or double-click run_web.command on Mac)
-Then open: http://localhost:8765
-Uses only stdlib (no Flask). Stays local, no internet (unless you use an API backend).
+"""First AI Agent mobile web server.
+
+Routes:
+- /              Agent chat
+- /scan          Mobile scanner PWA
+- /dashboard     Saved document dashboard
+- /download?file=NAME
+- /save_pdf      Save generated PDF into data/documents/
+- /delete_doc    Delete a saved document and sidecars
 """
 import base64
 import html
 import json
+import mimetypes
+import os
 import re
 import subprocess
 import sys
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
-# Run from project root so agent and data paths work
-import os
 _project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _project_root)
 os.chdir(_project_root)
-# Default to offline so "what is bitcoin" / "how can you help" use your docs, not a model
 if "LLM_BACKEND" not in os.environ:
     os.environ["LLM_BACKEND"] = "none"
 
@@ -35,7 +39,6 @@ try:
 except Exception:
     build_document_card = None
 
-# Use PORT and 0.0.0.0 when deployed (e.g. Render, Railway); localhost when local
 try:
     PORT = int(os.environ.get("PORT") or 8765)
 except (TypeError, ValueError):
@@ -43,243 +46,45 @@ except (TypeError, ValueError):
 HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 DOCUMENTS_DIR = os.path.join(_project_root, "data", "documents")
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
-
-# In-memory state (one user)
 _chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
 PWA_HEAD = """
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icon.svg">
-  <meta name="theme-color" content="#1a1b26">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="AI Scanner">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="theme-color" content="#1a1b26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AI Scanner">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 """
-
 PWA_SCRIPT = """
 <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    });
-  }
+if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 </script>
-"""
-
-HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/icon.svg">
-  <meta name="theme-color" content="#1a1b26">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="AI Scanner">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>First AI Agent</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 1rem; background: #1a1b26; color: #c0caf5; min-height: 100vh; }
-    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
-    .sub { font-size: 0.85rem; opacity: 0.8; margin-bottom: 1rem; }
-    .toolbar { display:flex; flex-wrap:wrap; gap:0.5rem; margin: 1rem 0; }
-    .linkbtn { display:inline-flex; align-items:center; justify-content:center; padding:0.6rem 0.8rem; border-radius:6px; background:#292e42; color:#c0caf5; border:1px solid #3b4261; text-decoration:none; font-weight:600; }
-    .linkbtn.primary { background:#7aa2f7; color:#1a1b26; border:0; }
-    #log { background: #16161e; border: 1px solid #3b4261; border-radius: 8px; padding: 1rem; min-height: 200px; max-height: 50vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; }
-    .msg { margin-bottom: 0.75rem; }
-    .msg.user { color: #7aa2f7; }
-    .msg.agent { color: #9ece6a; }
-    form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
-    input[type="text"] { flex: 1; padding: 0.6rem; border: 1px solid #3b4261; border-radius: 6px; background: #16161e; color: #c0caf5; font-size: 1rem; }
-    button { padding: 0.6rem 1rem; background: #7aa2f7; color: #1a1b26; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
-  </style>
-</head>
-<body>
-  <h1>First AI Agent</h1>
-  <p class="sub">Local docs &amp; Q&A. Type <strong>help</strong> for commands.</p>
-  <div class="toolbar">
-    <a class="linkbtn primary" href="/scan">Scan photos to PDF</a>
-    <a class="linkbtn" href="/dashboard">Dashboard</a>
-    <a class="linkbtn" href="/health">Health check</a>
-  </div>
-  <p class="sub" style="margin-top:0; color:#7aa2f7;">If you see &quot;no server&quot; or can&apos;t connect: start the server first — double-click <strong>run_web.command</strong> or run <strong>.venv/bin/python run_web.py</strong> in the project folder, then open this page.</p>
-  <div id="log"></div>
-  <form id="f">
-    <input type="text" id="input" placeholder="Ask or type help…" autocomplete="off">
-    <button type="submit">Send</button>
-  </form>
-  <script>
-    const log = document.getElementById("log");
-    const input = document.getElementById("input");
-    const f = document.getElementById("f");
-    function add(msg, who) {
-      const d = document.createElement("div");
-      d.className = "msg " + who;
-      d.textContent = (who === "user" ? "You: " : "Agent: ") + msg;
-      log.appendChild(d);
-      log.scrollTop = log.scrollHeight;
-    }
-    async function sendMessage(text) {
-      if (!text) return;
-      add(text, "user");
-      try {
-        const r = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
-        let j = {};
-        try { j = await r.json(); } catch (_) { add("Server error (no JSON). Is the server running?", "agent"); return; }
-        if (!r.ok) { add("Error " + r.status + ": " + (j.error || j.response || r.statusText), "agent"); return; }
-        add(j.response || j.error || "No response", "agent");
-      } catch (err) {
-        add("No server. Start it first: double-click run_web.command or run .venv/bin/python run_web.py in the project folder, then open " + location.origin, "agent");
-      }
-    }
-    const params = new URLSearchParams(window.location.search);
-    const askDoc = params.get("ask_doc");
-    if (askDoc) sendMessage("read " + askDoc);
-    f.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const text = input.value.trim();
-      if (!text) return;
-      input.value = "";
-      sendMessage(text);
-    });
-  </script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      });
-    }
-  </script>
-</body>
-</html>
 """
 
 
 def safe_filename(name):
     name = (name or "scan.pdf").strip().replace("\\", "_").replace("/", "_")
     name = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
-    if not name.lower().endswith(".pdf"):
-        name += ".pdf"
     return name or "scan.pdf"
 
 
-def inject_pwa(html_text):
-    if "manifest.webmanifest" not in html_text:
-        html_text = html_text.replace("</head>", PWA_HEAD + "</head>")
-    if "serviceWorker" not in html_text:
-        html_text = html_text.replace("</body>", PWA_SCRIPT + "</body>")
-    return html_text
+def safe_doc_path(name):
+    name = safe_filename(unquote(name or ""))
+    path = os.path.abspath(os.path.join(DOCUMENTS_DIR, name))
+    root = os.path.abspath(DOCUMENTS_DIR)
+    if not path.startswith(root + os.sep):
+        return None
+    return path
 
 
-def get_document_rows():
-    rows = []
-    if not os.path.isdir(DOCUMENTS_DIR):
-        return rows
-    for name in sorted(os.listdir(DOCUMENTS_DIR), key=lambda n: os.path.getmtime(os.path.join(DOCUMENTS_DIR, n)), reverse=True):
-        lower = name.lower()
-        if lower.endswith((".ocr.txt", ".json")) or lower.startswith("_ocr_tmp_page"):
-            continue
-        if not lower.endswith((".pdf", ".txt", ".md", ".markdown", ".csv")):
-            continue
-        path = os.path.join(DOCUMENTS_DIR, name)
-        if not os.path.isfile(path):
-            continue
-        stat = os.stat(path)
-        ocr_path = path + ".ocr.txt"
-        json_path = path + ".json"
-        doc_type = "document"
-        summary = ""
-        if os.path.exists(json_path):
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                doc_type = meta.get("type") or doc_type
-                s = meta.get("summary") or []
-                summary = " ".join(s[:2]) if isinstance(s, list) else str(s)
-            except Exception:
-                pass
-        elif build_document_card and (os.path.exists(ocr_path) or lower.endswith((".txt", ".md", ".markdown"))):
-            try:
-                meta = build_document_card(path)
-                doc_type = meta.get("type") or doc_type
-                s = meta.get("summary") or []
-                summary = " ".join(s[:2]) if isinstance(s, list) else ""
-            except Exception:
-                pass
-        rows.append({
-            "name": name,
-            "size_kb": max(1, round(stat.st_size / 1024)),
-            "mtime": stat.st_mtime,
-            "date": __import__("datetime").datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %Y %I:%M %p"),
-            "ocr": os.path.exists(ocr_path),
-            "json": os.path.exists(json_path),
-            "type": doc_type,
-            "summary": summary,
-        })
-    return rows
-
-
-def build_dashboard_html():
-    rows = get_document_rows()
-    cards = []
-    if not rows:
-        cards.append("""
-        <section class='empty card'>
-          <h2>No saved documents yet</h2>
-          <p class='sub'>Start by scanning photos into a PDF, then tap Save to Agent.</p>
-          <a class='btn primary' href='/scan'>Open Scanner</a>
-        </section>
-        """)
-    for r in rows:
-        name = html.escape(r["name"])
-        qname = quote(r["name"])
-        summary = html.escape(r.get("summary") or "No summary yet. OCR or document intelligence can improve this.")
-        badges = []
-        badges.append(f"<span>{html.escape(r['type'])}</span>")
-        badges.append("<span>OCR</span>" if r["ocr"] else "<span class='mutedBadge'>No OCR</span>")
-        badges.append("<span>Smart card</span>" if r["json"] else "<span class='mutedBadge'>No card</span>")
-        cards.append(f"""
-        <article class='doc card' data-name='{name.lower()}'>
-          <div class='docTop'>
-            <div><h2>{name}</h2><p class='sub'>{html.escape(r['date'])} · {r['size_kb']} KB</p></div>
-          </div>
-          <div class='badges'>{''.join(badges)}</div>
-          <p class='summary'>{summary}</p>
-          <div class='actions'>
-            <a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a>
-            <a class='btn' href='/scan'>Scan More</a>
-          </div>
-        </article>
-        """)
-    return f"""<!DOCTYPE html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8'>
-  <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>
-  <link rel='manifest' href='/manifest.webmanifest'>
-  <link rel='icon' href='/icon.svg' type='image/svg+xml'>
-  <meta name='theme-color' content='#1a1b26'>
-  <title>Document Dashboard</title>
-  <style>
-    *{{box-sizing:border-box}} body{{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}} main{{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}} a{{color:#7aa2f7;text-decoration:none}} .topbar{{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.9);backdrop-filter:blur(14px);border-bottom:1px solid rgba(59,66,97,.65)}} .brand small,.sub{{color:rgba(192,202,245,.76)}} h1{{font-size:1.45rem;margin:.25rem 0}} h2{{font-size:1rem;margin:.1rem 0}} .card{{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}} input{{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}} .badges{{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}} .badges span{{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}} .badges .mutedBadge{{color:#e0af68}} .summary{{color:rgba(192,202,245,.82);line-height:1.45}} .actions{{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}} .btn{{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:850}} .btn.primary{{background:#7aa2f7;color:#1a1b26;border:0}} .bottomNav{{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid rgba(59,66,97,.85);display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}} .navItem{{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;text-decoration:none}} .navItem.active{{background:#292e42;color:#7aa2f7}}
-  </style>
-</head>
-<body>
-<main>
-  <header class='topbar'><div class='brand'><small>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header>
-  <section class='card'><input id='search' placeholder='Search saved documents…'></section>
-  {''.join(cards)}
-</main>
-<nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav>
-<script>
-const search=document.getElementById('search');
-if(search) search.addEventListener('input',()=>{{const q=search.value.toLowerCase();document.querySelectorAll('.doc').forEach(c=>c.style.display=c.dataset.name.includes(q)?'block':'none')}});
-if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{{}}));
-</script>
-</body></html>"""
+def inject_pwa(text):
+    if "manifest.webmanifest" not in text:
+        text = text.replace("</head>", PWA_HEAD + "</head>")
+    if "serviceWorker" not in text:
+        text = text.replace("</body>", PWA_SCRIPT + "</body>")
+    return text
 
 
 def extract_pdf_text_if_any(path):
@@ -289,16 +94,15 @@ def extract_pdf_text_if_any(path):
         reader = PdfReader(path)
         parts = []
         for page in reader.pages:
-            text = page.extract_text() or ""
-            if text.strip():
-                parts.append(text.strip())
+            txt = page.extract_text() or ""
+            if txt.strip():
+                parts.append(txt.strip())
         return "\n\n".join(parts).strip()
     except Exception:
         return ""
 
 
 def try_local_ocr(pdf_path):
-    """Optional OCR. Uses external tools only when installed. Never blocks normal PDF saving."""
     ocr_txt_path = pdf_path + ".ocr.txt"
     normal_text = extract_pdf_text_if_any(pdf_path)
     if normal_text:
@@ -319,9 +123,9 @@ def try_local_ocr(pdf_path):
                 continue
             img_path = os.path.join(DOCUMENTS_DIR, name)
             try:
-                text = subprocess.check_output(["tesseract", img_path, "stdout"], stderr=subprocess.STDOUT, text=True, timeout=60)
-                if text.strip():
-                    chunks.append(f"--- {name} ---\n{text.strip()}")
+                txt = subprocess.check_output(["tesseract", img_path, "stdout"], stderr=subprocess.STDOUT, text=True, timeout=60)
+                if txt.strip():
+                    chunks.append(f"--- {name} ---\n{txt.strip()}")
             finally:
                 try:
                     os.remove(img_path)
@@ -337,11 +141,97 @@ def try_local_ocr(pdf_path):
         return {"ok": False, "mode": "ocr_error", "message": str(e)}
 
 
+def document_rows():
+    rows = []
+    for name in sorted(os.listdir(DOCUMENTS_DIR), key=lambda n: os.path.getmtime(os.path.join(DOCUMENTS_DIR, n)), reverse=True):
+        lower = name.lower()
+        if lower.startswith("_ocr_tmp_page") or lower.endswith((".ocr.txt", ".json")):
+            continue
+        if not lower.endswith((".pdf", ".txt", ".md", ".markdown", ".csv")):
+            continue
+        path = os.path.join(DOCUMENTS_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        stat = os.stat(path)
+        ocr_path = path + ".ocr.txt"
+        json_path = path + ".json"
+        doc_type = "document"
+        summary = "No summary yet. OCR or document intelligence can improve this."
+        if os.path.exists(json_path):
+            try:
+                meta = json.load(open(json_path, "r", encoding="utf-8"))
+                doc_type = meta.get("type") or doc_type
+                s = meta.get("summary") or []
+                summary = " ".join(s[:2]) if isinstance(s, list) and s else summary
+            except Exception:
+                pass
+        elif build_document_card and (os.path.exists(ocr_path) or lower.endswith((".txt", ".md", ".markdown"))):
+            try:
+                meta = build_document_card(path)
+                doc_type = meta.get("type") or doc_type
+                s = meta.get("summary") or []
+                summary = " ".join(s[:2]) if isinstance(s, list) and s else summary
+            except Exception:
+                pass
+        rows.append({
+            "name": name,
+            "date": datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %Y %I:%M %p"),
+            "size_kb": max(1, round(stat.st_size / 1024)),
+            "ocr": os.path.exists(ocr_path),
+            "json": os.path.exists(json_path),
+            "type": doc_type,
+            "summary": summary,
+        })
+    return rows
+
+
+def dashboard_html():
+    rows = document_rows()
+    cards = []
+    if not rows:
+        cards.append("""<section class='card'><h2>No saved documents yet</h2><p class='sub'>Start by scanning photos into a PDF, then tap Save to Agent.</p><a class='btn primary' href='/scan'>Open Scanner</a></section>""")
+    for r in rows:
+        name = html.escape(r["name"])
+        qname = quote(r["name"])
+        summary = html.escape(r["summary"])
+        cards.append(f"""
+<article class='doc card' data-name='{name.lower()}'>
+  <h2>{name}</h2>
+  <p class='sub'>{html.escape(r['date'])} · {r['size_kb']} KB</p>
+  <div class='badges'><span>{html.escape(r['type'])}</span><span>{'OCR' if r['ocr'] else 'No OCR'}</span><span>{'Smart card' if r['json'] else 'No card'}</span></div>
+  <p class='summary'>{summary}</p>
+  <div class='actions'>
+    <a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a>
+    <a class='btn' href='/download?file={qname}'>Download</a>
+    <button class='btn shareBtn' data-file='{name}'>Share</button>
+    <button class='btn danger deleteBtn' data-file='{name}'>Delete</button>
+  </div>
+</article>""")
+    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Document Dashboard</title><style>
+*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}}main{{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}}a{{color:#7aa2f7;text-decoration:none}}.topbar{{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.92);backdrop-filter:blur(14px);border-bottom:1px solid #3b4261}}h1{{font-size:1.45rem;margin:.2rem 0}}h2{{font-size:1rem;margin:.1rem 0}}.sub{{color:rgba(192,202,245,.76)}}.card{{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}}input{{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}}.badges{{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}}.badges span{{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}}.summary{{color:rgba(192,202,245,.82);line-height:1.45}}.actions{{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}}.btn{{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:850;text-align:center}}button.btn{{width:100%;font:inherit;cursor:pointer}}.btn.primary{{background:#7aa2f7;color:#1a1b26;border:0}}.btn.danger{{background:#f7768e;color:#1a1b26;border:0}}.bottomNav{{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid #3b4261;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}}.navItem{{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;text-decoration:none}}.navItem.active{{background:#292e42;color:#7aa2f7}}
+</style></head><body><main><header class='topbar'><div><small class='sub'>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><input id='search' placeholder='Search saved documents…'></section>{''.join(cards)}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav><script>
+const search=document.getElementById('search');if(search)search.addEventListener('input',()=>{{const q=search.value.toLowerCase();document.querySelectorAll('.doc').forEach(c=>c.style.display=c.dataset.name.includes(q)?'block':'none')}});
+document.querySelectorAll('.deleteBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;if(!confirm('Delete '+file+' and related OCR/metadata files?'))return;const r=await fetch('/delete_doc',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{file}})}});const j=await r.json();if(j.ok)location.reload();else alert(j.error||'Delete failed');}}));
+document.querySelectorAll('.shareBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;const url='/download?file='+encodeURIComponent(file);try{{if(navigator.share){{await navigator.share({{title:file,text:'Document from First AI Agent',url:location.origin+url}});}}else location.href=url;}}catch(e){{if(e.name!=='AbortError')location.href=url;}}}}));
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{{}}));
+</script></body></html>"""
+
+
+def agent_html():
+    return HTML
+
+
 class Handler(BaseHTTPRequestHandler):
+    def _json(self, obj, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+
     def _serve_file(self, filename, content_type):
+        path = os.path.join(_project_root, filename)
         try:
-            with open(os.path.join(_project_root, filename), "rb") as f:
-                data = f.read()
+            data = open(path, "rb").read()
             self.send_response(200)
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-cache")
@@ -354,168 +244,112 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(f"Not found: {filename} ({e})".encode("utf-8"))
 
     def do_GET(self):
-        path = self.path.split("?")[0]
-        if path == "/manifest.webmanifest":
-            self._serve_file("manifest.webmanifest", "application/manifest+json; charset=utf-8")
-            return
-        if path == "/sw.js":
-            self._serve_file("sw.js", "application/javascript; charset=utf-8")
-            return
-        if path == "/icon.svg":
-            self._serve_file("icon.svg", "image/svg+xml; charset=utf-8")
-            return
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/manifest.webmanifest": return self._serve_file("manifest.webmanifest", "application/manifest+json; charset=utf-8")
+        if path == "/sw.js": return self._serve_file("sw.js", "application/javascript; charset=utf-8")
+        if path == "/icon.svg": return self._serve_file("icon.svg", "image/svg+xml; charset=utf-8")
         if path == "/health":
+            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers(); self.wfile.write(b"ok"); return
+        if path == "/download":
+            name = parse_qs(parsed.query).get("file", [""])[0]
+            doc_path = safe_doc_path(name)
+            if not doc_path or not os.path.isfile(doc_path):
+                self.send_response(404); self.end_headers(); return
+            ctype = mimetypes.guess_type(doc_path)[0] or "application/octet-stream"
+            data = open(doc_path, "rb").read()
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"ok")
-            return
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Disposition", f"attachment; filename=\"{os.path.basename(doc_path)}\"")
+            self.end_headers(); self.wfile.write(data); return
         if path == "/dashboard":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(build_dashboard_html().encode("utf-8"))
-            return
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(dashboard_html().encode("utf-8")); return
         if path in ("/scan", "/scan.html"):
             try:
-                with open(os.path.join(_project_root, "scan.html"), "r", encoding="utf-8") as f:
-                    scan_html = inject_pwa(f.read())
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(scan_html.encode("utf-8"))
+                scan = inject_pwa(open(os.path.join(_project_root, "scan.html"), "r", encoding="utf-8").read())
+                self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(scan.encode("utf-8"))
             except Exception as e:
-                self.send_response(500)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(f"Could not load scan.html: {e}".encode("utf-8"))
+                self.send_response(500); self.end_headers(); self.wfile.write(str(e).encode("utf-8"))
             return
-        if path == "/" or path == "/index.html" or not path.startswith("/chat"):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.end_headers()
-            self.wfile.write(HTML.encode("utf-8"))
-        else:
-            self.send_response(404)
-            self.end_headers()
+        self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(agent_html().encode("utf-8"))
 
     def do_POST(self):
-        path = self.path.split("?")[0]
+        path = urlparse(self.path).path
+        if path == "/delete_doc":
+            length = int(self.headers.get("Content-Length", 0)); raw = self.rfile.read(length).decode("utf-8", errors="ignore")
+            try:
+                name = json.loads(raw).get("file", "")
+                doc_path = safe_doc_path(name)
+                if not doc_path or not os.path.isfile(doc_path):
+                    return self._json({"ok": False, "error": "File not found"}, 404)
+                deleted = []
+                for p in [doc_path, doc_path + ".ocr.txt", doc_path + ".json"]:
+                    if os.path.exists(p):
+                        os.remove(p); deleted.append(os.path.basename(p))
+                return self._json({"ok": True, "deleted": deleted})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/save_pdf":
-            self._handle_save_pdf()
-            return
+            return self._handle_save_pdf()
         if path != "/chat":
-            self.send_response(404)
-            self.end_headers()
-            return
-        length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(length).decode("utf-8", errors="ignore")
+            self.send_response(404); self.end_headers(); return
+        length = int(self.headers.get("Content-Length", 0)); body = self.rfile.read(length).decode("utf-8", errors="ignore")
         try:
-            data = json.loads(body) if body else {}
-            msg = (data.get("message") or "").strip()
+            msg = (json.loads(body).get("message") or "").strip()
         except Exception:
             msg = ""
-        if not msg:
-            self._send_json({"response": "Empty message."})
-            return
-        if msg.lower() in ("exit", "quit"):
-            self._send_json({"response": "Say exit only in the terminal to close the server. Here, just keep chatting."})
-            return
+        if not msg: return self._json({"response": "Empty message."})
         global _chat_messages
         try:
             response, _chat_messages = process_turn(msg, _chat_messages)
-            self._send_json({"response": response})
+            return self._json({"response": response})
         except Exception as e:
-            self._send_json({"response": f"Error: {e}", "error": str(e)})
+            return self._json({"response": f"Error: {e}", "error": str(e)})
 
     def _handle_save_pdf(self):
         length = int(self.headers.get("Content-Length", 0))
         if length > 25 * 1024 * 1024:
-            self._send_json({"ok": False, "error": "PDF is too large. Try fewer/smaller images."}, status=413)
-            return
+            return self._json({"ok": False, "error": "PDF is too large. Try fewer/smaller images."}, 413)
         raw = self.rfile.read(length).decode("utf-8", errors="ignore")
         try:
             data = json.loads(raw) if raw else {}
             filename = safe_filename(data.get("filename") or "scan.pdf")
-            pdf_base64 = data.get("pdf_base64") or ""
-            pdf_bytes = base64.b64decode(pdf_base64, validate=True)
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+            pdf_bytes = base64.b64decode(data.get("pdf_base64") or "", validate=True)
         except Exception as e:
-            self._send_json({"ok": False, "error": f"Invalid PDF upload: {e}"}, status=400)
-            return
+            return self._json({"ok": False, "error": f"Invalid PDF upload: {e}"}, 400)
         if not pdf_bytes.startswith(b"%PDF"):
-            self._send_json({"ok": False, "error": "Uploaded file does not look like a PDF."}, status=400)
-            return
-        os.makedirs(DOCUMENTS_DIR, exist_ok=True)
+            return self._json({"ok": False, "error": "Uploaded file does not look like a PDF."}, 400)
         out_path = os.path.join(DOCUMENTS_DIR, filename)
-        base, ext = os.path.splitext(filename)
-        counter = 2
+        base, ext = os.path.splitext(filename); counter = 2
         while os.path.exists(out_path):
-            filename = f"{base}_{counter}{ext}"
-            out_path = os.path.join(DOCUMENTS_DIR, filename)
-            counter += 1
+            filename = f"{base}_{counter}{ext}"; out_path = os.path.join(DOCUMENTS_DIR, filename); counter += 1
         try:
-            with open(out_path, "wb") as f:
-                f.write(pdf_bytes)
+            open(out_path, "wb").write(pdf_bytes)
         except Exception as e:
-            self._send_json({"ok": False, "error": f"Could not save PDF: {e}"}, status=500)
-            return
+            return self._json({"ok": False, "error": f"Could not save PDF: {e}"}, 500)
         ocr = try_local_ocr(out_path)
-        self._send_json({
-            "ok": True,
-            "filename": filename,
-            "path": f"data/documents/{filename}",
-            "ask_url": f"/?ask_doc={filename}",
-            "ocr": ocr,
-            "dashboard_url": "/dashboard",
-            "message": f"Saved to data/documents/{filename}"
-        })
-
-    def _send_json(self, obj, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.end_headers()
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.wfile.write(body)
+        return self._json({"ok": True, "filename": filename, "path": f"data/documents/{filename}", "ask_url": f"/?ask_doc={filename}", "download_url": f"/download?file={quote(filename)}", "ocr": ocr, "dashboard_url": "/dashboard", "message": f"Saved to data/documents/{filename}"})
 
     def log_message(self, *_):
         pass
 
 
 def main():
-    try_port = PORT
     try:
-        server = HTTPServer((HOST, try_port), Handler)
-        if HOST == "127.0.0.1":
-            print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
-            print(f"Scanner — open http://localhost:{try_port}/scan")
-            print(f"Dashboard — open http://localhost:{try_port}/dashboard")
-            print("PWA files — /manifest.webmanifest /sw.js /icon.svg")
-        else:
-            print(f"First AI Agent — running on port {try_port}. Use your deployment URL (e.g. Render dashboard).")
-            print("Scanner route: /scan")
-            print("Dashboard route: /dashboard")
-        print("Press Ctrl+C to stop.")
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            server.shutdown()
-        return
-    except OSError as e:
-        if e.errno == 48 and HOST == "127.0.0.1":
-            for attempt in range(1, 10):
-                try_port = PORT + attempt
-                try:
-                    server = HTTPServer((HOST, try_port), Handler)
-                    print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
-                    print(f"Scanner — open http://localhost:{try_port}/scan")
-                    print(f"Dashboard — open http://localhost:{try_port}/dashboard")
-                    print("PWA files — /manifest.webmanifest /sw.js /icon.svg")
-                    server.serve_forever()
-                    return
-                except OSError:
-                    continue
-        print(f"Could not bind. Stop the other server or use: lsof -i :{PORT}")
-        raise
+        server = HTTPServer((HOST, PORT), Handler)
+    except OSError:
+        server = HTTPServer((HOST, PORT + 1), Handler)
+    actual = server.server_port
+    print(f"First AI Agent — open http://localhost:{actual}")
+    print(f"Scanner — open http://localhost:{actual}/scan")
+    print(f"Dashboard — open http://localhost:{actual}/dashboard")
+    print("Press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.shutdown()
 
 
 if __name__ == "__main__":
