@@ -214,7 +214,8 @@ def document_rows():
 
 def app_shell_css():
     return """
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}main{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}a{color:#7aa2f7;text-decoration:none}.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.92);backdrop-filter:blur(14px);border-bottom:1px solid #3b4261}h1{font-size:1.45rem;margin:.2rem 0}h2{font-size:1rem;margin:.1rem 0}.sub{color:rgba(192,202,245,.76)}.card{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}input{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}.badges{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}.badges span{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}.summary{color:rgba(192,202,245,.82);line-height:1.45}.actions{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}.btn{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:850;text-align:center}button.btn{width:100%;font:inherit;cursor:pointer}.btn.primary{background:#7aa2f7;color:#1a1b26;border:0}.btn.danger{background:#f7768e;color:#1a1b26;border:0}.bottomNav{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid #3b4261;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}.navItem{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;text-decoration:none}.navItem.active{background:#292e42;color:#7aa2f7}.previewFrame{width:100%;height:72vh;border:1px solid #3b4261;border-radius:18px;background:#101014}.preText{white-space:pre-wrap;line-height:1.5;background:#101014;border:1px solid #3b4261;border-radius:18px;padding:1rem;overflow:auto;max-height:72vh}
+@font-face{font-family:'ZdykPisces';src:url('/fonts/ZdykPisces.ttf') format('truetype');font-weight:normal;font-style:normal;font-display:swap}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}main{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}a{color:#7aa2f7;text-decoration:none}.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.9);backdrop-filter:blur(14px);border-bottom:1px solid rgba(59,66,97,.65)}h1{font-family:'ZdykPisces',system-ui,sans-serif;font-size:1.45rem;margin:.3rem 0;letter-spacing:-.02em}h2{font-size:1rem;margin:.1rem 0}.sub{color:rgba(192,202,245,.76);line-height:1.45}.card{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}input{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}.badges{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}.badges span{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}.summary{color:rgba(192,202,245,.82);line-height:1.45}.actions{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}.btn{display:flex;align-items:center;justify-content:center;min-height:52px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:800;text-align:center}button.btn{width:100%;font:inherit;cursor:pointer}.btn.primary{background:#7aa2f7;color:#1a1b26;border:0}.btn.danger{background:#f7768e;color:#1a1b26;border:0}.bottomNav{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid rgba(59,66,97,.85);display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}.navItem{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18rem;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.72rem;font-weight:750;text-decoration:none}.navItem.active{background:#292e42;color:#7aa2f7}.navIcon{font-size:1.05rem}.previewFrame{width:100%;height:72vh;border:1px solid #3b4261;border-radius:18px;background:#101014}.preText{white-space:pre-wrap;line-height:1.5;background:#101014;border:1px solid #3b4261;border-radius:18px;padding:1rem;overflow:auto;max-height:72vh}
 """
 
 
@@ -241,7 +242,7 @@ def dashboard_html():
     <button class='btn danger deleteBtn' data-file='{name}'>Delete</button>
   </div>
 </article>""")
-    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Document Dashboard</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><input id='search' placeholder='Search saved documents…'></section>{''.join(cards)}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav><script>
+    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Document Dashboard</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><input id='search' placeholder='Search saved documents…'></section>{''.join(cards)}</main><nav class='bottomNav'><a class='navItem' href='/'><span class='navIcon'>⌂</span><span>Agent</span></a><a class='navItem' href='/scan'><span class='navIcon'>▣</span><span>Scan</span></a><a class='navItem active' href='/dashboard'><span class='navIcon'>≡</span><span>Dashboard</span></a></nav><script>
 const search=document.getElementById('search');if(search)search.addEventListener('input',()=>{{const q=search.value.toLowerCase();document.querySelectorAll('.doc').forEach(c=>c.style.display=c.dataset.name.includes(q)?'block':'none')}});
 document.querySelectorAll('.deleteBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;if(!confirm('Delete '+file+' and related OCR/metadata files?'))return;const r=await fetch('/delete_doc',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{file}})}});const j=await r.json();if(j.ok)location.reload();else alert(j.error||'Delete failed');}}));
 document.querySelectorAll('.shareBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;const url='/download?file='+encodeURIComponent(file);try{{if(navigator.share){{await navigator.share({{title:file,text:'Document from First AI Agent',url:location.origin+url}});}}else location.href=url;}}catch(e){{if(e.name!=='AbortError')location.href=url;}}}}));
@@ -267,7 +268,7 @@ def preview_html(name, doc_path):
         content = "<section class='card'><p class='sub'>Preview is not available for this file type. Download it instead.</p></section>"
     ocr_path = doc_path + ".ocr.txt"
     ocr_link = f"<a class='btn' href='/preview?file={quote(os.path.basename(ocr_path))}'>View OCR Text</a>" if os.path.exists(ocr_path) else ""
-    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Preview {safe_name}</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Preview</small><h1>{safe_name}</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/dashboard'>Back</a></header><section class='card'><div class='actions'><a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a><a class='btn' href='/download?file={qname}'>Download</a>{ocr_link}</div></section>{content}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav>{PWA_SCRIPT}</body></html>"""
+    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Preview {safe_name}</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Preview</small><h1>{safe_name}</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/dashboard'>Back</a></header><section class='card'><div class='actions'><a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a><a class='btn' href='/download?file={qname}'>Download</a>{ocr_link}</div></section>{content}</main><nav class='bottomNav'><a class='navItem' href='/'><span class='navIcon'>⌂</span><span>Agent</span></a><a class='navItem' href='/scan'><span class='navIcon'>▣</span><span>Scan</span></a><a class='navItem active' href='/dashboard'><span class='navIcon'>≡</span><span>Dashboard</span></a></nav>{PWA_SCRIPT}</body></html>"""
 
 
 HTML = """\
@@ -285,16 +286,18 @@ HTML = """\
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>AI Agent</title>
 <style>
+@font-face{font-family:'ZdykPisces';src:url('/fonts/ZdykPisces.ttf') format('truetype');font-weight:normal;font-style:normal;font-display:swap}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}
 main{max-width:820px;margin:0 auto;padding:0 1rem}
 a{color:#7aa2f7;text-decoration:none}
 .topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;
-  padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem;
-  background:rgba(26,27,38,.92);backdrop-filter:blur(14px);border-bottom:1px solid #3b4261}
-h1{font-size:1.45rem;margin:.2rem 0}.sub{color:rgba(192,202,245,.76)}
-.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 .9rem;
+  padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;
+  background:rgba(26,27,38,.9);backdrop-filter:blur(14px);border-bottom:1px solid rgba(59,66,97,.65)}
+h1{font-family:'ZdykPisces',system-ui,sans-serif;font-size:1.45rem;margin:.3rem 0;letter-spacing:-.02em}
+.sub{color:rgba(192,202,245,.76);line-height:1.45}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 .9rem;
   border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:800;
   font-size:.85rem;cursor:pointer;text-decoration:none}
 button.btn{font:inherit}
@@ -312,7 +315,7 @@ button.btn{font:inherit}
 .input-bar{position:fixed;left:0;right:0;bottom:0;z-index:20;
   padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom,0px));
   background:rgba(22,22,30,.97);backdrop-filter:blur(16px);
-  border-top:1px solid #3b4261;
+  border-top:1px solid rgba(59,66,97,.65);
   padding-bottom:calc(3.8rem + env(safe-area-inset-bottom,0px))}
 .input-row{max-width:820px;margin:0 auto;display:flex;gap:.6rem}
 #inp{flex:1;padding:.75rem 1rem;border:1px solid #3b4261;border-radius:14px;
@@ -325,11 +328,12 @@ button.btn{font:inherit}
 .bottomNav{position:fixed;left:0;right:0;bottom:0;z-index:19;
   padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));
   background:rgba(22,22,30,.94);backdrop-filter:blur(16px);
-  border-top:1px solid #3b4261;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
-.navItem{display:flex;align-items:center;justify-content:center;min-height:48px;
-  border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;
+  border-top:1px solid rgba(59,66,97,.85);display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+.navItem{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.18rem;
+  min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.72rem;font-weight:750;
   text-decoration:none}
 .navItem.active{background:#292e42;color:#7aa2f7}
+.navIcon{font-size:1.05rem}
 </style>
 </head>
 <body>
@@ -348,9 +352,9 @@ button.btn{font:inherit}
   </div>
 </div>
 <nav class='bottomNav'>
-  <a class='navItem active' href='/'>Agent</a>
-  <a class='navItem' href='/scan'>Scan</a>
-  <a class='navItem' href='/dashboard'>Dashboard</a>
+  <a class='navItem active' href='/'><span class='navIcon'>⌂</span><span>Agent</span></a>
+  <a class='navItem' href='/scan'><span class='navIcon'>▣</span><span>Scan</span></a>
+  <a class='navItem' href='/dashboard'><span class='navIcon'>≡</span><span>Dashboard</span></a>
 </nav>
 <script>
 (function(){
@@ -502,6 +506,21 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(scan.encode("utf-8"))
             except Exception as e:
                 self.send_response(500); self.end_headers(); self.wfile.write(str(e).encode("utf-8"))
+            return
+        if path.startswith("/fonts/"):
+            font_name = os.path.basename(path)
+            font_path = os.path.join(_project_root, "fonts", font_name)
+            ctype = "font/ttf" if font_name.endswith(".ttf") else "font/woff2" if font_name.endswith(".woff2") else "application/octet-stream"
+            if os.path.isfile(font_path):
+                try:
+                    with open(font_path, "rb") as _fh:
+                        data = _fh.read()
+                    self.send_response(200); self.send_header("Content-Type", ctype)
+                    self.send_header("Cache-Control", "public, max-age=31536000"); self.end_headers(); self.wfile.write(data)
+                except Exception as e:
+                    self.send_response(500); self.end_headers(); self.wfile.write(str(e).encode())
+            else:
+                self.send_response(404); self.end_headers()
             return
         self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(agent_html().encode("utf-8"))
 
