@@ -1,0 +1,28 @@
+{
+  "name": "First AI Agent Scanner",
+  "short_name": "AI Scanner",
+  "description": "Phone-first scanner that turns photos into PDFs and prepares documents for local AI Q&A.",
+  "start_url": "/scan",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1a1b26",
+  "theme_color": "#1a1b26",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities", "education"],
+  "shortcuts": [
+    {
+      "name": "Scan Photos to PDF",
+      "short_name": "Scan",
+      "description": "Open the camera scanner",
+      "url": "/scan"
+    }
+  ]
+}
