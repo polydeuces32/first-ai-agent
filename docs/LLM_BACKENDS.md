@@ -80,7 +80,7 @@ python -m src.agent
 
 **What works:**
 - **What documents do we have** / **list documents** → lists files in `data/documents/`
-- **read bitcoin.pdf** (or any filename) → extracts and shows text from that document
+- **read report.pdf** (or any filename) → extracts and shows text from that document
 - **wow report** → generates `reports/WOW_REPORT.md` as before
 
 Anything else shows a short help. No network, no model loaded.

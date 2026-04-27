@@ -9,7 +9,7 @@ Don’t include `.venv` (it’s large and machine-specific). Your friend will cr
 **Option A – From the project folder in Terminal:**
 
 ```bash
-cd /Users/giancarlovizhnay
+cd ~
 zip -r first-ai-agent.zip first-ai-agent -x "first-ai-agent/.venv/*" -x "first-ai-agent/__pycache__/*" -x "*__pycache__*" -x "*.pyc"
 ```
 
@@ -70,7 +70,7 @@ Or double‑click **`setup.command`** (Mac) if you have it — it does the same.
 ### 4. Try these
 
 - Type **help** — see commands and question examples.
-- Type **what is bitcoin** — answer from the Bitcoin whitepaper.
-- Type **ask about bitcoin** — then ask follow‑up questions.
+- Drop a PDF into `data/documents/` and type **list documents** to see it.
+- Type **ask about <your doc name>** — then ask follow‑up questions.
 
 Everything runs **offline** (no API keys, no internet needed for the agent).

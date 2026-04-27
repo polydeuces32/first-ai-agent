@@ -13,6 +13,6 @@ Local Q&A over your documents (PDFs, text). No API keys, runs offline.
    - **Mac:** Double‑click **`run_web.command`**, then open **http://127.0.0.1:8765** in your browser.  
    - Or: `./.venv/bin/python run_web.py` (Mac/Linux) or `.venv\Scripts\python run_web.py` (Windows)
 
-3. In the browser: type **help** or **what is bitcoin** to try it.
+3. In the browser: type **help** to see what you can do.
 
 See **docs/SHARE_WITH_FRIEND.md** for full “share with a friend” and setup instructions.

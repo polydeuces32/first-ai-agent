@@ -42,7 +42,7 @@ cd /path/to/first-ai-agent
 .venv/bin/python run_web.py
 ```
 
-Open **http://127.0.0.1:8765** and type in the box. Same commands and questions as in the terminal (help, ask about bitcoin, read doc, etc.). Stays local; no extra dependencies.
+Open **http://127.0.0.1:8765** and type in the box. Same commands and questions as in the terminal (help, ask about a doc, read doc, etc.). Stays local; no extra dependencies.
 
 ---
 

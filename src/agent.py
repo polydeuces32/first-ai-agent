@@ -36,7 +36,7 @@ LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama").strip().lower()
 if LLM_BACKEND not in ("ollama", "openai", "none"):
     LLM_BACKEND = "ollama"
 
-DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("OPENAI_MODEL", "bitcoin-brain:latest"))
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("OPENAI_MODEL", "llama3.2:latest"))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 # OpenAI-compatible (used when LLM_BACKEND=openai): LM Studio, Groq, OpenAI, Together, etc.
@@ -462,7 +462,7 @@ def build_wow_report(results: Dict[str, str], model_name: str) -> str:
 # No-LLM mode: simple intents, no internet, no model on your hardware
 # ----------------------------
 def _offline_document_names() -> List[str]:
-    """Return list of document filenames (e.g. bitcoin.pdf) in data/documents."""
+    """Return list of document filenames in data/documents."""
     if not DOCUMENTS_DIR.exists():
         return []
     return [
@@ -512,7 +512,7 @@ _OFFLINE_QUESTION_PREFIXES = (
 
 
 def _offline_topic_from_question(user: str) -> Optional[str]:
-    """Extract topic from many question forms. Returns the subject (e.g. 'bitcoin') or None."""
+    """Extract topic from many question forms. Returns the subject or None."""
     u = (user or "").strip().lower().rstrip("?.!")
     for prefix in _OFFLINE_QUESTION_PREFIXES:
         if u.startswith(prefix):
@@ -522,7 +522,7 @@ def _offline_topic_from_question(user: str) -> Optional[str]:
             # "how does X work" -> take first word(s) as topic; "summary of X" -> X
             if not topic:
                 continue
-            # If topic has many words, keep the part that likely matches a doc (e.g. "bitcoin" not "bitcoin work")
+            # If topic has many words, keep the part that likely matches a doc name
             words = topic.split()
             for n in range(len(words), 0, -1):
                 candidate = " ".join(words[:n])
@@ -533,17 +533,16 @@ def _offline_topic_from_question(user: str) -> Optional[str]:
 
 
 def _offline_find_document_for_topic(topic: str) -> Optional[str]:
-    """If a document name matches the topic (e.g. bitcoin -> bitcoin.pdf), return filename.
-    Prefer exact stem match so 'what is bitcoin' uses bitcoin.pdf, not Bitcoin_dataset.pdf."""
+    """If a document name matches the topic, return its filename.
+    Prefer exact stem match over partial match."""
     topic = (topic or "").strip().lower()
     if not topic:
         return None
     names = _offline_document_names()
-    # Exact stem match first (e.g. bitcoin -> bitcoin.pdf)
     for name in names:
         if Path(name).stem.lower() == topic:
             return name
-    # Then partial match (e.g. cryptography -> Introduction_to_Modern_Cryptography_2nd.pdf)
+    # Partial match fallback
     for name in names:
         stem = Path(name).stem.lower()
         if topic in stem or stem in topic:
@@ -690,7 +689,7 @@ def handle_offline_turn(user: str) -> Optional[str]:
         path = _offline_read_document_path(user)
         if path:
             return read_document(path)
-        return "Usage: read <filename>  e.g. read bitcoin.pdf"
+        return "Usage: read <filename>  e.g. read report.pdf"
 
     # "Ask about <subject>" — load doc and enter Q&A mode for all types of questions
     ask_about = _offline_ask_about_subject(user)
@@ -715,7 +714,7 @@ def handle_offline_turn(user: str) -> Optional[str]:
             if subject:
                 return f"No document found for '{subject}'. Use 'list documents' to see available docs."
 
-    # "What is bitcoin" / "explain X" -> read matching document and show content
+    # "What is X" / "explain X" -> read matching document and show content
     topic = _offline_topic_from_question(user)
     if topic:
         doc_name = _offline_find_document_for_topic(topic)
@@ -732,16 +731,16 @@ def handle_offline_turn(user: str) -> Optional[str]:
 OFFLINE_HELP = (
     "You can ask questions in many forms or use commands. No internet, no model.\n\n"
     "Q&A mode (ask many questions about one subject):\n"
-    "  • ask about bitcoin       — then ask anything; say 'examples' or 'what can I ask?' for ideas\n"
+    "  • ask about <subject>     — then ask anything; say 'examples' or 'what can I ask?' for ideas\n"
     "  • qa <subject>            — same. Say 'done' to leave Q&A.\n\n"
     "One-shot questions (many phrasings work):\n"
-    "  • What is bitcoin? / Explain cryptography / Tell me about X\n"
+    "  • What is X? / Explain X / Tell me about X\n"
     "  • Can you explain...? / Give me a summary of... / How does X work?\n"
     "  • Who created it? / Why is it important? / What are the key points?\n\n"
     "Commands:\n"
     "  • help                    — show this\n"
     "  • what documents / list documents — list PDFs and docs\n"
-    "  • read <name>             — e.g. read bitcoin.pdf\n"
+    "  • read <name>             — e.g. read report.pdf\n"
     "  • wow report              — generate reports/WOW_REPORT.md\n"
     "  • done / back             — leave Q&A mode\n"
     "  • exit                    — quit"

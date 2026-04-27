@@ -10,7 +10,7 @@ Deploy to **Render** (free tier). You get a URL like `https://first-ai-agent-xxx
 2. In your project folder:
 
 ```bash
-cd /Users/giancarlovizhnay/first-ai-agent
+cd ~/first-ai-agent
 git init
 git add .
 # Don't commit .venv or big/cache files

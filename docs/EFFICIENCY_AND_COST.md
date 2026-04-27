@@ -25,7 +25,7 @@ So:
    Don’t switch to raw TCP. HTTP is simple, supported by Ollama, and easy to use with `requests`.
 
 2. **Use a small/fast model when possible**  
-   e.g. `llama3.2:1b`, `phi3:mini`, or your current `bitcoin-brain:latest` if it’s small. Smaller model = less CPU/GPU time = faster and more “efficient” at zero cost.
+   e.g. `llama3.2:1b` or `phi3:mini`. Smaller model = less CPU/GPU time = faster and more “efficient” at zero cost.
 
 3. **Let Ollama use Metal (GPU) if you have Apple Silicon**  
    No code change needed; Ollama does this by default. Same zero cost, better speed.
