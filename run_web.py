@@ -42,6 +42,9 @@ HTML = """<!DOCTYPE html>
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 0 auto; padding: 1rem; background: #1a1b26; color: #c0caf5; min-height: 100vh; }
     h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
     .sub { font-size: 0.85rem; opacity: 0.8; margin-bottom: 1rem; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:0.5rem; margin: 1rem 0; }
+    .linkbtn { display:inline-flex; align-items:center; justify-content:center; padding:0.6rem 0.8rem; border-radius:6px; background:#292e42; color:#c0caf5; border:1px solid #3b4261; text-decoration:none; font-weight:600; }
+    .linkbtn.primary { background:#7aa2f7; color:#1a1b26; border:0; }
     #log { background: #16161e; border: 1px solid #3b4261; border-radius: 8px; padding: 1rem; min-height: 200px; max-height: 50vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; }
     .msg { margin-bottom: 0.75rem; }
     .msg.user { color: #7aa2f7; }
@@ -56,6 +59,10 @@ HTML = """<!DOCTYPE html>
 <body>
   <h1>First AI Agent</h1>
   <p class="sub">Local docs &amp; Q&A. Type <strong>help</strong> for commands.</p>
+  <div class="toolbar">
+    <a class="linkbtn primary" href="/scan">Scan photos to PDF</a>
+    <a class="linkbtn" href="/health">Health check</a>
+  </div>
   <p class="sub" style="margin-top:0; color:#7aa2f7;">If you see &quot;no server&quot; or can&apos;t connect: start the server first — double-click <strong>run_web.command</strong> or run <strong>.venv/bin/python run_web.py</strong> in the project folder, then open this page.</p>
   <div id="log"></div>
   <form id="f">
@@ -97,13 +104,27 @@ HTML = """<!DOCTYPE html>
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Serve the app for / and any path (so no "Not Found" on typos or trailing slash)
+        # Serve the app, health check, and scanner page.
         path = self.path.split("?")[0]
         if path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(b"ok")
+            return
+        if path in ("/scan", "/scan.html"):
+            try:
+                with open(os.path.join(_project_root, "scan.html"), "r", encoding="utf-8") as f:
+                    scan_html = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(scan_html.encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(f"Could not load scan.html: {e}".encode("utf-8"))
             return
         if path == "/" or path == "/index.html" or not path.startswith("/chat"):
             self.send_response(200)
@@ -160,8 +181,10 @@ def main():
         server = HTTPServer((HOST, try_port), Handler)
         if HOST == "127.0.0.1":
             print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
+            print(f"Scanner — open http://localhost:{try_port}/scan")
         else:
             print(f"First AI Agent — running on port {try_port}. Use your deployment URL (e.g. Render dashboard).")
+            print("Scanner route: /scan")
         print("Press Ctrl+C to stop.")
         try:
             server.serve_forever()
@@ -175,6 +198,7 @@ def main():
                 try:
                     server = HTTPServer((HOST, try_port), Handler)
                     print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
+                    print(f"Scanner — open http://localhost:{try_port}/scan")
                     server.serve_forever()
                     return
                 except OSError:
