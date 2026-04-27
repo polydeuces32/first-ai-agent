@@ -47,7 +47,32 @@ except (TypeError, ValueError):
 HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
 DOCUMENTS_DIR = os.path.join(_project_root, "data", "documents")
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
-_chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+CHAT_HISTORY_FILE = os.path.join(_project_root, "data", "chat_history.json")
+HISTORY_MAX_MESSAGES = 60
+
+
+def _load_chat_history():
+    try:
+        with open(CHAT_HISTORY_FILE, "r", encoding="utf-8") as _f:
+            msgs = json.load(_f)
+        if isinstance(msgs, list) and msgs:
+            return msgs
+    except Exception:
+        pass
+    return [{"role": "system", "content": SYSTEM_PROMPT}]
+
+
+def _save_chat_history(messages):
+    try:
+        kept = [messages[0]] + messages[-HISTORY_MAX_MESSAGES:]
+        with open(CHAT_HISTORY_FILE, "w", encoding="utf-8") as _f:
+            json.dump(kept, _f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+_chat_messages = _load_chat_history()
 
 PWA_HEAD = """
 <link rel="manifest" href="/manifest.webmanifest">
@@ -245,6 +270,168 @@ def preview_html(name, doc_path):
     return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Preview {safe_name}</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Preview</small><h1>{safe_name}</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/dashboard'>Back</a></header><section class='card'><div class='actions'><a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a><a class='btn' href='/download?file={qname}'>Download</a>{ocr_link}</div></section>{content}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav>{PWA_SCRIPT}</body></html>"""
 
 
+HTML = """\
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="theme-color" content="#1a1b26">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AI Agent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>AI Agent</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}
+main{max-width:820px;margin:0 auto;padding:0 1rem}
+a{color:#7aa2f7;text-decoration:none}
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;
+  padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem;
+  background:rgba(26,27,38,.92);backdrop-filter:blur(14px);border-bottom:1px solid #3b4261}
+h1{font-size:1.45rem;margin:.2rem 0}.sub{color:rgba(192,202,245,.76)}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 .9rem;
+  border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:800;
+  font-size:.85rem;cursor:pointer;text-decoration:none}
+button.btn{font:inherit}
+.btn.danger{background:#f7768e;color:#1a1b26;border:0}
+.doc-banner{background:#292e42;border:1px solid #3b4261;border-radius:14px;
+  padding:.6rem .9rem;margin:.75rem 0;font-size:.88rem;color:#9ece6a;display:none}
+#msgs{padding:.75rem 0 1rem;display:flex;flex-direction:column;gap:.75rem;
+  padding-bottom:calc(7rem + env(safe-area-inset-bottom,0px))}
+.bubble{max-width:82%;padding:.75rem 1rem;border-radius:18px;line-height:1.55;
+  font-size:.95rem;white-space:pre-wrap;word-break:break-word}
+.bubble.user{align-self:flex-end;background:#7aa2f7;color:#1a1b26;border-bottom-right-radius:5px}
+.bubble.agent{align-self:flex-start;background:rgba(22,22,30,.96);
+  border:1px solid #3b4261;border-bottom-left-radius:5px;color:#c0caf5}
+.bubble.thinking{color:rgba(192,202,245,.55);font-style:italic}
+.input-bar{position:fixed;left:0;right:0;bottom:0;z-index:20;
+  padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom,0px));
+  background:rgba(22,22,30,.97);backdrop-filter:blur(16px);
+  border-top:1px solid #3b4261;
+  padding-bottom:calc(3.8rem + env(safe-area-inset-bottom,0px))}
+.input-row{max-width:820px;margin:0 auto;display:flex;gap:.6rem}
+#inp{flex:1;padding:.75rem 1rem;border:1px solid #3b4261;border-radius:14px;
+  background:#101014;color:#c0caf5;font-size:1rem;resize:none;height:48px;
+  max-height:140px;overflow-y:auto}
+#inp:focus{outline:none;border-color:#7aa2f7}
+#send{min-width:60px;min-height:48px;border-radius:14px;background:#7aa2f7;
+  color:#1a1b26;border:0;font-weight:900;font-size:1rem;cursor:pointer}
+#send:disabled{opacity:.45;cursor:default}
+.bottomNav{position:fixed;left:0;right:0;bottom:0;z-index:19;
+  padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));
+  background:rgba(22,22,30,.94);backdrop-filter:blur(16px);
+  border-top:1px solid #3b4261;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}
+.navItem{display:flex;align-items:center;justify-content:center;min-height:48px;
+  border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;
+  text-decoration:none}
+.navItem.active{background:#292e42;color:#7aa2f7}
+</style>
+</head>
+<body>
+<main>
+  <header class='topbar'>
+    <div><small class='sub'>Chat</small><h1>AI Agent</h1></div>
+    <button class='btn danger' id='newChat' style='min-height:36px;padding:0 .75rem;font-size:.82rem'>New Chat</button>
+  </header>
+  <div id='docBanner' class='doc-banner'></div>
+  <div id='msgs'></div>
+</main>
+<div class='input-bar'>
+  <div class='input-row'>
+    <textarea id='inp' placeholder='Ask anything…' rows='1'></textarea>
+    <button id='send'>Send</button>
+  </div>
+</div>
+<nav class='bottomNav'>
+  <a class='navItem active' href='/'>Agent</a>
+  <a class='navItem' href='/scan'>Scan</a>
+  <a class='navItem' href='/dashboard'>Dashboard</a>
+</nav>
+<script>
+(function(){
+  var msgs=document.getElementById('msgs');
+  var inp=document.getElementById('inp');
+  var sendBtn=document.getElementById('send');
+  var banner=document.getElementById('docBanner');
+
+  function addBubble(text,role){
+    var d=document.createElement('div');
+    d.className='bubble '+role;
+    d.textContent=text;
+    msgs.appendChild(d);
+    msgs.scrollTop=msgs.scrollHeight;
+    return d;
+  }
+
+  function setLoading(on){
+    sendBtn.disabled=on;
+    inp.disabled=on;
+    sendBtn.textContent=on?'…':'Send';
+  }
+
+  async function send(text){
+    if(!text.trim())return;
+    inp.value='';
+    inp.style.height='48px';
+    addBubble(text,'user');
+    setLoading(true);
+    var thinking=addBubble('Thinking…','agent thinking');
+    try{
+      var r=await fetch('/chat',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:text})});
+      var j=await r.json();
+      thinking.className='bubble agent';
+      thinking.textContent=j.response||'(no response)';
+    }catch(e){
+      thinking.className='bubble agent';
+      thinking.textContent='Network error: '+e.message;
+    }
+    setLoading(false);
+    msgs.scrollTop=msgs.scrollHeight;
+    inp.focus();
+  }
+
+  sendBtn.addEventListener('click',function(){send(inp.value)});
+  inp.addEventListener('keydown',function(e){
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(inp.value);}
+  });
+  inp.addEventListener('input',function(){
+    this.style.height='48px';
+    this.style.height=Math.min(this.scrollHeight,140)+'px';
+  });
+
+  document.getElementById('newChat').addEventListener('click',async function(){
+    if(!confirm('Start a new conversation? Current history will be cleared.'))return;
+    await fetch('/reset_chat',{method:'POST'});
+    msgs.innerHTML='';
+    banner.style.display='none';
+  });
+
+  // Handle ?ask_doc= pre-fill
+  var params=new URLSearchParams(location.search);
+  var askDoc=params.get('ask_doc');
+  if(askDoc){
+    banner.textContent='Asking about: '+decodeURIComponent(askDoc);
+    banner.style.display='block';
+    var q='Tell me about '+decodeURIComponent(askDoc);
+    inp.value=q;
+    send(q);
+  }
+
+  if('serviceWorker'in navigator)
+    window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){})});
+})();
+</script>
+</body>
+</html>"""
+
+
 def agent_html():
     return HTML
 
@@ -319,6 +506,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(agent_html().encode("utf-8"))
 
     def do_POST(self):
+        global _chat_messages
         path = urlparse(self.path).path
         if path == "/delete_doc":
             length = int(self.headers.get("Content-Length", 0)); raw = self.rfile.read(length).decode("utf-8", errors="ignore")
@@ -336,6 +524,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
         if path == "/save_pdf":
             return self._handle_save_pdf()
+        if path == "/reset_chat":
+            _chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            _save_chat_history(_chat_messages)
+            return self._json({"ok": True})
         if path != "/chat":
             self.send_response(404); self.end_headers(); return
         length = int(self.headers.get("Content-Length", 0)); body = self.rfile.read(length).decode("utf-8", errors="ignore")
@@ -344,9 +536,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             msg = ""
         if not msg: return self._json({"response": "Empty message."})
-        global _chat_messages
         try:
             response, _chat_messages = process_turn(msg, _chat_messages)
+            _save_chat_history(_chat_messages)
             return self._json({"response": response})
         except Exception as e:
             return self._json({"response": f"Error: {e}", "error": str(e)})
