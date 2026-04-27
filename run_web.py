@@ -5,7 +5,9 @@ Run: python run_web.py   (or double-click run_web.command on Mac)
 Then open: http://localhost:8765
 Uses only stdlib (no Flask). Stays local, no internet (unless you use an API backend).
 """
+import base64
 import json
+import re
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs
@@ -27,6 +29,8 @@ try:
 except (TypeError, ValueError):
     PORT = 8765
 HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+DOCUMENTS_DIR = os.path.join(_project_root, "data", "documents")
+os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
 # In-memory state (one user)
 _chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -80,12 +84,9 @@ HTML = """<!DOCTYPE html>
       log.appendChild(d);
       log.scrollTop = log.scrollHeight;
     }
-    f.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const text = input.value.trim();
+    async function sendMessage(text) {
       if (!text) return;
       add(text, "user");
-      input.value = "";
       try {
         const r = await fetch("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text }) });
         let j = {};
@@ -95,11 +96,31 @@ HTML = """<!DOCTYPE html>
       } catch (err) {
         add("No server. Start it first: double-click run_web.command or run .venv/bin/python run_web.py in the project folder, then open " + location.origin, "agent");
       }
+    }
+    const params = new URLSearchParams(window.location.search);
+    const askDoc = params.get("ask_doc");
+    if (askDoc) {
+      sendMessage("read " + askDoc);
+    }
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      sendMessage(text);
     });
   </script>
 </body>
 </html>
 """
+
+
+def safe_filename(name):
+    name = (name or "scan.pdf").strip().replace("\\", "_").replace("/", "_")
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    return name or "scan.pdf"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -137,6 +158,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        if path == "/save_pdf":
+            self._handle_save_pdf()
+            return
         if path != "/chat":
             self.send_response(404)
             self.end_headers()
@@ -161,8 +185,47 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json({"response": f"Error: {e}", "error": str(e)})
 
-    def _send_json(self, obj):
-        self.send_response(200)
+    def _handle_save_pdf(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length > 25 * 1024 * 1024:
+            self._send_json({"ok": False, "error": "PDF is too large. Try fewer/smaller images."}, status=413)
+            return
+        raw = self.rfile.read(length).decode("utf-8", errors="ignore")
+        try:
+            data = json.loads(raw) if raw else {}
+            filename = safe_filename(data.get("filename") or "scan.pdf")
+            pdf_base64 = data.get("pdf_base64") or ""
+            pdf_bytes = base64.b64decode(pdf_base64, validate=True)
+        except Exception as e:
+            self._send_json({"ok": False, "error": f"Invalid PDF upload: {e}"}, status=400)
+            return
+        if not pdf_bytes.startswith(b"%PDF"):
+            self._send_json({"ok": False, "error": "Uploaded file does not look like a PDF."}, status=400)
+            return
+        os.makedirs(DOCUMENTS_DIR, exist_ok=True)
+        out_path = os.path.join(DOCUMENTS_DIR, filename)
+        base, ext = os.path.splitext(filename)
+        counter = 2
+        while os.path.exists(out_path):
+            filename = f"{base}_{counter}{ext}"
+            out_path = os.path.join(DOCUMENTS_DIR, filename)
+            counter += 1
+        try:
+            with open(out_path, "wb") as f:
+                f.write(pdf_bytes)
+        except Exception as e:
+            self._send_json({"ok": False, "error": f"Could not save PDF: {e}"}, status=500)
+            return
+        self._send_json({
+            "ok": True,
+            "filename": filename,
+            "path": f"data/documents/{filename}",
+            "ask_url": f"/?ask_doc={filename}",
+            "message": f"Saved to data/documents/{filename}"
+        })
+
+    def _send_json(self, obj, status=200):
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.end_headers()
         try:
