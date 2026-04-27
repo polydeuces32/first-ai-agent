@@ -242,8 +242,10 @@ def run_cmd(command: str) -> str:
         return f"[run_cmd] Command not allowlisted: {cmd}\nAllowed: {', '.join(sorted(ALLOWED_CMDS))}"
 
     try:
-        out = subprocess.check_output(parts, stderr=subprocess.STDOUT, text=True)
+        out = subprocess.check_output(parts, stderr=subprocess.STDOUT, text=True, timeout=30)
         return out.strip()
+    except subprocess.TimeoutExpired:
+        return "[run_cmd] Command timed out after 30 seconds."
     except subprocess.CalledProcessError as e:
         msg = (e.output or "").strip()
         return msg if msg else f"[run_cmd] Failed with code {e.returncode}"
@@ -313,10 +315,24 @@ def extract_first_json_object(s: str) -> Optional[str]:
     if start == -1:
         return None
     depth = 0
+    in_string = False
+    escape = False
     for i in range(start, len(s)):
-        if s[i] == "{":
+        c = s[i]
+        if escape:
+            escape = False
+            continue
+        if c == "\\" and in_string:
+            escape = True
+            continue
+        if c == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if c == "{":
             depth += 1
-        elif s[i] == "}":
+        elif c == "}":
             depth -= 1
             if depth == 0:
                 return s[start : i + 1]
@@ -366,13 +382,24 @@ def is_wow_report_request(user_text: str) -> bool:
     return (user_text or "").strip().lower() == "wow report"
 
 
+def _run_wow_cmd_safe(cmd: str) -> str:
+    """Run a hardcoded WOW command with shell=True for $(…) expansion.
+    Only called for commands defined in WOW_COMMANDS — never for user input."""
+    try:
+        out = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, text=True, timeout=30)
+        return out.strip()
+    except subprocess.CalledProcessError as e:
+        msg = (e.output or "").strip()
+        return msg if msg else f"[error code {e.returncode}]"
+    except Exception as e:
+        return f"[error: {e}]"
+
+
 def run_wow_commands_collect() -> Dict[str, str]:
-    """
-    Run WOW_COMMANDS one by one via run_cmd and return a dict of command->output.
-    """
+    """Run WOW_COMMANDS one by one and return a dict of command->output."""
     results: Dict[str, str] = {}
     for cmd in WOW_COMMANDS:
-        results[cmd] = run_cmd(cmd)
+        results[cmd] = _run_wow_cmd_safe(cmd)
     return results
 
 
@@ -776,6 +803,8 @@ def process_turn(user: str, messages: List[Dict[str, str]]) -> Tuple[str, List[D
         messages.append({"role": "assistant", "content": final})
         return final or "(no response)", messages
 
+    _TOOL_OUTPUT_LIMIT = 12_000
+
     tool_output = ""
     if tool == "read_file":
         tool_output = read_file(str(args.get("path", "")))
@@ -789,6 +818,9 @@ def process_turn(user: str, messages: List[Dict[str, str]]) -> Tuple[str, List[D
         tool_output = list_documents()
     else:
         tool_output = f"[tool] Unknown tool: {tool}"
+
+    if len(tool_output) > _TOOL_OUTPUT_LIMIT:
+        tool_output = tool_output[:_TOOL_OUTPUT_LIMIT] + f"\n\n[... truncated: {len(tool_output)} total chars ...]"
 
     log_line(f"PLAN: {raw}")
     log_line(f"TOOL({tool}): {tool_output}")
@@ -825,6 +857,7 @@ def process_turn(user: str, messages: List[Dict[str, str]]) -> Tuple[str, List[D
 def main() -> None:
     model = DEFAULT_MODEL
 
+    endpoint = ""
     if LLM_BACKEND == "none":
         backend_label = "Offline (no model, no internet)"
     else:
