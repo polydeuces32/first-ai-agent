@@ -2,96 +2,227 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>First AI Agent Scanner</title>
   <style>
     * { box-sizing: border-box; }
+    :root {
+      --bg:#1a1b26;
+      --panel:#16161e;
+      --panel2:#101014;
+      --line:#3b4261;
+      --text:#c0caf5;
+      --muted:rgba(192,202,245,.78);
+      --blue:#7aa2f7;
+      --green:#9ece6a;
+      --yellow:#e0af68;
+      --red:#f7768e;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
     body {
       margin: 0;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #1a1b26;
-      color: #c0caf5;
+      background: radial-gradient(circle at top, #25283a 0, var(--bg) 46%);
+      color: var(--text);
       min-height: 100vh;
-      padding: 1rem;
+      padding: 0;
     }
-    main { max-width: 760px; margin: 0 auto; }
-    a { color: #7aa2f7; text-decoration: none; }
-    h1 { font-size: 1.5rem; margin: 0.5rem 0; }
+    main {
+      width: 100%;
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 1rem 1rem calc(6rem + var(--safe-bottom));
+    }
+    a { color: var(--blue); text-decoration: none; }
+    h1 { font-size: 1.45rem; margin: 0.3rem 0; letter-spacing: -0.02em; }
+    h2 { font-size: 1.05rem; margin: 0 0 0.7rem; }
     p { line-height: 1.5; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:1rem;
+      padding: calc(.75rem + env(safe-area-inset-top, 0px)) 1rem .75rem;
+      margin: 0 -1rem 1rem;
+      background: rgba(26,27,38,.88);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(59,66,97,.65);
+    }
+    .brand { display:flex; flex-direction:column; gap:.15rem; }
+    .brand small { color:var(--muted); font-weight:650; }
+    .pill {
+      border:1px solid var(--line);
+      background:#292e42;
+      color:var(--text);
+      border-radius:999px;
+      padding:.45rem .7rem;
+      font-size:.8rem;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .hero {
+      border:1px solid rgba(122,162,247,.35);
+      background: linear-gradient(145deg, rgba(122,162,247,.18), rgba(22,22,30,.96));
+      border-radius: 24px;
+      padding: 1.1rem;
+      box-shadow: 0 18px 48px rgba(0,0,0,.25);
+    }
     .card {
-      background: #16161e;
-      border: 1px solid #3b4261;
-      border-radius: 12px;
+      background: rgba(22,22,30,.96);
+      border: 1px solid var(--line);
+      border-radius: 18px;
       padding: 1rem;
       margin: 1rem 0;
     }
-    .sub { opacity: 0.85; font-size: 0.95rem; }
-    .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
-    label.button, button {
+    .sub { color: var(--muted); font-size: 0.95rem; margin:.4rem 0; }
+    .warn { color: var(--yellow); }
+    .actions { display: grid; grid-template-columns: 1fr; gap: 0.75rem; margin-top: 1rem; }
+    @media (min-width: 560px) { .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    label.button, button, .button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       border: 0;
-      border-radius: 8px;
-      padding: 0.75rem 1rem;
-      font-weight: 700;
+      border-radius: 14px;
+      padding: 0.92rem 1rem;
+      font-weight: 800;
+      font-size: 1rem;
       cursor: pointer;
-      background: #7aa2f7;
+      background: var(--blue);
       color: #1a1b26;
-      min-height: 44px;
+      min-height: 52px;
+      text-align:center;
+      text-decoration:none;
+      touch-action: manipulation;
     }
-    button.secondary, label.secondary { background: #292e42; color: #c0caf5; border: 1px solid #3b4261; }
-    button.danger { background: #f7768e; color: #1a1b26; }
+    button.secondary, label.secondary, .button.secondary { background: #292e42; color: var(--text); border: 1px solid var(--line); }
+    button.danger { background: var(--red); color: #1a1b26; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
     input[type="file"] { display: none; }
     input[type="text"] {
       width: 100%;
-      padding: 0.7rem;
-      border: 1px solid #3b4261;
-      border-radius: 8px;
-      background: #101014;
-      color: #c0caf5;
+      padding: 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel2);
+      color: var(--text);
       margin-top: 0.5rem;
+      font-size: 1rem;
     }
+    .stats {
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap:.65rem;
+      margin-top: 1rem;
+    }
+    .stat {
+      background:rgba(16,16,20,.9);
+      border:1px solid rgba(59,66,97,.8);
+      border-radius:14px;
+      padding:.75rem;
+      text-align:center;
+    }
+    .stat strong { display:block; font-size:1.15rem; color:var(--green); }
+    .stat span { font-size:.76rem; color:var(--muted); }
     #pages {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
       gap: 0.75rem;
       margin-top: 1rem;
     }
-    .page { border: 1px solid #3b4261; border-radius: 10px; overflow: hidden; background: #101014; }
+    .page { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--panel2); }
     .page img { width: 100%; height: 190px; object-fit: cover; display: block; background: #0f1018; }
-    .page-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem; font-size: 0.8rem; }
-    .small-btn { min-height: 34px; padding: 0.4rem 0.55rem; font-size: 0.8rem; border-radius: 6px; }
-    .status { margin-top: 0.75rem; color: #9ece6a; white-space: pre-wrap; }
-    .warn { color: #e0af68; }
-    .error { color: #f7768e; }
-    .successBox { border-color:#9ece6a; }
+    .page-footer { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.55rem; font-size: 0.82rem; }
+    .small-btn { min-height: 34px; padding: 0.4rem 0.55rem; font-size: 0.8rem; border-radius: 9px; }
+    .status { margin-top: 0.75rem; color: var(--green); white-space: pre-wrap; font-weight:650; }
+    .error { color: var(--red); }
+    .successBox { border-color: rgba(158,206,106,.75); }
+    .bottomNav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 20;
+      padding: .7rem .85rem calc(.7rem + var(--safe-bottom));
+      background: rgba(22,22,30,.94);
+      backdrop-filter: blur(16px);
+      border-top:1px solid rgba(59,66,97,.85);
+      display:grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap:.5rem;
+    }
+    .navItem {
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:.18rem;
+      min-height:48px;
+      border-radius:14px;
+      color:var(--muted);
+      font-size:.72rem;
+      font-weight:750;
+      text-decoration:none;
+      background:transparent;
+      border:0;
+      padding:.2rem;
+    }
+    .navItem.active { background:#292e42; color:var(--blue); }
+    .navIcon { font-size:1.05rem; line-height:1; }
+    .installHint {
+      display:none;
+      border:1px solid rgba(122,162,247,.45);
+      background:rgba(122,162,247,.1);
+    }
     footer { margin: 2rem 0 1rem; opacity: 0.7; font-size: 0.85rem; }
   </style>
 </head>
 <body>
 <main>
-  <p><a href="/">← Back to Agent</a></p>
+  <header class="topbar">
+    <div class="brand">
+      <small>Mobile Document AI</small>
+      <strong>AI Scanner</strong>
+    </div>
+    <a class="pill" href="/">Agent</a>
+  </header>
+
+  <section class="hero">
+    <h1>Scan paper into a PDF</h1>
+    <p class="sub">Use your phone camera, make one clean PDF, save it to the local AI document vault, then ask questions.</p>
+    <div class="actions">
+      <label class="button" for="cameraInput">Open Camera</label>
+      <label class="button secondary" for="fileInput">Choose Photos</label>
+    </div>
+  </section>
+
+  <section id="installHint" class="card installHint">
+    <h2>Install on your phone</h2>
+    <p class="sub">Use your browser menu and tap <strong>Add to Home Screen</strong> so this opens like an app.</p>
+  </section>
 
   <section class="card">
-    <h1>First AI Agent Scanner</h1>
-    <p class="sub">Take phone pictures or upload images, preview the pages, and export them as one PDF.</p>
-    <p class="sub warn">Phase 2 saves the generated PDF into <strong>data/documents/</strong>. Phase 3 OCR is optional and local-first.</p>
-
+    <h2>Document setup</h2>
+    <p class="sub warn">OCR is optional and local-first. If installed, scanned PDFs can become searchable text.</p>
     <label for="pdfName" class="sub">PDF filename</label>
     <input id="pdfName" type="text" value="first-ai-agent-scan.pdf" placeholder="my-scan.pdf">
 
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple>
+    <input id="fileInput" type="file" accept="image/*" multiple>
+
+    <div class="stats">
+      <div class="stat"><strong id="pageCount">0</strong><span>Pages</span></div>
+      <div class="stat"><strong>PDF</strong><span>Output</span></div>
+      <div class="stat"><strong>Local</strong><span>Private</span></div>
+    </div>
+
     <div class="actions">
-      <label class="button" for="cameraInput">Scan / Add Photos</label>
-      <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple>
-
-      <label class="button secondary" for="fileInput">Choose Images</label>
-      <input id="fileInput" type="file" accept="image/*" multiple>
-
       <button id="makePdfBtn" disabled>Download PDF</button>
       <button id="savePdfBtn" class="secondary" disabled>Save to Agent</button>
-      <button id="clearBtn" class="danger" disabled>Clear</button>
+      <button id="clearBtn" class="danger" disabled>Clear Pages</button>
     </div>
 
     <div id="status" class="status">No images selected yet.</div>
@@ -112,9 +243,16 @@
   </section>
 
   <footer>
-    Privacy-first: image processing happens in your browser. Saving to Agent stores the PDF on your local server in data/documents/.
+    Privacy-first: images are processed in your browser. Saving to Agent stores the PDF on your local server in data/documents/.
   </footer>
 </main>
+
+<nav class="bottomNav" aria-label="Main mobile navigation">
+  <a class="navItem" href="/"><span class="navIcon">⌂</span><span>Agent</span></a>
+  <label class="navItem active" for="cameraInput"><span class="navIcon">▣</span><span>Scan</span></label>
+  <button class="navItem" id="bottomSaveBtn" type="button"><span class="navIcon">↓</span><span>Save</span></button>
+  <button class="navItem" id="bottomClearBtn" type="button"><span class="navIcon">×</span><span>Clear</span></button>
+</nav>
 
 <script>
   const cameraInput = document.getElementById('cameraInput');
@@ -122,15 +260,23 @@
   const makePdfBtn = document.getElementById('makePdfBtn');
   const savePdfBtn = document.getElementById('savePdfBtn');
   const clearBtn = document.getElementById('clearBtn');
+  const bottomSaveBtn = document.getElementById('bottomSaveBtn');
+  const bottomClearBtn = document.getElementById('bottomClearBtn');
   const pagesEl = document.getElementById('pages');
   const statusEl = document.getElementById('status');
+  const pageCount = document.getElementById('pageCount');
   const pdfName = document.getElementById('pdfName');
   const savedBox = document.getElementById('savedBox');
   const savedText = document.getElementById('savedText');
   const askLink = document.getElementById('askLink');
+  const installHint = document.getElementById('installHint');
 
   let pages = [];
   let lastPdfBlob = null;
+
+  if (!window.matchMedia('(display-mode: standalone)').matches) {
+    installHint.style.display = 'block';
+  }
 
   function setStatus(text, type = '') {
     statusEl.textContent = text;
@@ -144,9 +290,13 @@
   }
 
   function updateButtons() {
-    makePdfBtn.disabled = pages.length === 0;
-    savePdfBtn.disabled = pages.length === 0;
-    clearBtn.disabled = pages.length === 0;
+    const hasPages = pages.length > 0;
+    makePdfBtn.disabled = !hasPages;
+    savePdfBtn.disabled = !hasPages;
+    clearBtn.disabled = !hasPages;
+    bottomSaveBtn.disabled = !hasPages;
+    bottomClearBtn.disabled = !hasPages;
+    pageCount.textContent = String(pages.length);
   }
 
   function renderPages() {
@@ -168,7 +318,7 @@
         pages.splice(index, 1);
         lastPdfBlob = null;
         renderPages();
-        setStatus(pages.length ? `${pages.length} image(s) ready for PDF.` : 'No images selected yet.');
+        setStatus(pages.length ? `${pages.length} image(s) ready.` : 'No images selected yet.');
       });
       footer.appendChild(label);
       footer.appendChild(removeBtn);
@@ -200,13 +350,13 @@
     }
     lastPdfBlob = null;
     renderPages();
-    setStatus(`${pages.length} image(s) ready for PDF.`);
+    setStatus(`${pages.length} image(s) ready. Tap Save to Agent or Download PDF.`);
   }
 
   cameraInput.addEventListener('change', e => addFiles(e.target.files));
   fileInput.addEventListener('change', e => addFiles(e.target.files));
 
-  clearBtn.addEventListener('click', () => {
+  function clearAll() {
     pages = [];
     lastPdfBlob = null;
     cameraInput.value = '';
@@ -214,7 +364,10 @@
     savedBox.style.display = 'none';
     renderPages();
     setStatus('No images selected yet.');
-  });
+  }
+
+  clearBtn.addEventListener('click', clearAll);
+  bottomClearBtn.addEventListener('click', clearAll);
 
   function loadImage(dataUrl) {
     return new Promise((resolve, reject) => {
@@ -245,7 +398,6 @@
       const bytes = atob(jpg.split(',')[1]);
       pageImages.push({ w, h, bytes });
     }
-
     const objects = [];
     const pagesKids = [];
     const catalogId = 1;
@@ -263,7 +415,6 @@
     }
     objects[catalogId] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
     objects[pagesId] = `<< /Type /Pages /Kids [${pagesKids.map(id => `${id} 0 R`).join(' ')}] /Count ${pagesKids.length} >>`;
-
     let pdf = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
     const offsets = [0];
     for (let i = 1; i < objects.length; i++) {
@@ -322,7 +473,8 @@
   async function savePdfToAgent() {
     if (!pages.length) return;
     savePdfBtn.disabled = true;
-    setStatus('Building and saving PDF to data/documents/...');
+    bottomSaveBtn.disabled = true;
+    setStatus('Saving PDF to Agent...');
     try {
       const blob = await ensurePdfBlob();
       const pdf_base64 = await blobToBase64(blob);
@@ -338,6 +490,7 @@
       savedText.textContent = `${j.message}. You can now ask the agent to read ${j.filename}.`;
       askLink.href = j.ask_url;
       setStatus(`Saved: ${j.path}`);
+      savedBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (err) {
       console.error(err);
       setStatus('Could not save PDF to Agent: ' + err.message, 'error');
@@ -346,6 +499,7 @@
 
   makePdfBtn.addEventListener('click', makePdf);
   savePdfBtn.addEventListener('click', savePdfToAgent);
+  bottomSaveBtn.addEventListener('click', savePdfToAgent);
 </script>
 </body>
 </html>
