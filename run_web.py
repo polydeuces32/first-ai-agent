@@ -41,11 +41,38 @@ os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 # In-memory state (one user)
 _chat_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
+PWA_HEAD = """
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <meta name="theme-color" content="#1a1b26">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="AI Scanner">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+"""
+
+PWA_SCRIPT = """
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
+</script>
+"""
+
 HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon.svg">
+  <meta name="theme-color" content="#1a1b26">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="AI Scanner">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>First AI Agent</title>
   <style>
     * { box-sizing: border-box; }
@@ -114,6 +141,13 @@ HTML = """<!DOCTYPE html>
       sendMessage(text);
     });
   </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
 """
@@ -125,6 +159,14 @@ def safe_filename(name):
     if not name.lower().endswith(".pdf"):
         name += ".pdf"
     return name or "scan.pdf"
+
+
+def inject_pwa(html):
+    if "manifest.webmanifest" not in html:
+        html = html.replace("</head>", PWA_HEAD + "</head>")
+    if "serviceWorker" not in html:
+        html = html.replace("</body>", PWA_SCRIPT + "</body>")
+    return html
 
 
 def extract_pdf_text_if_any(path):
@@ -185,8 +227,32 @@ def try_local_ocr(pdf_path):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def _serve_file(self, filename, content_type):
+        try:
+            with open(os.path.join(_project_root, filename), "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(f"Not found: {filename} ({e})".encode("utf-8"))
+
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path == "/manifest.webmanifest":
+            self._serve_file("manifest.webmanifest", "application/manifest+json; charset=utf-8")
+            return
+        if path == "/sw.js":
+            self._serve_file("sw.js", "application/javascript; charset=utf-8")
+            return
+        if path == "/icon.svg":
+            self._serve_file("icon.svg", "image/svg+xml; charset=utf-8")
+            return
         if path == "/health":
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
@@ -196,7 +262,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/scan", "/scan.html"):
             try:
                 with open(os.path.join(_project_root, "scan.html"), "r", encoding="utf-8") as f:
-                    scan_html = f.read()
+                    scan_html = inject_pwa(f.read())
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.end_headers()
@@ -304,6 +370,7 @@ def main():
         if HOST == "127.0.0.1":
             print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
             print(f"Scanner — open http://localhost:{try_port}/scan")
+            print("PWA files — /manifest.webmanifest /sw.js /icon.svg")
         else:
             print(f"First AI Agent — running on port {try_port}. Use your deployment URL (e.g. Render dashboard).")
             print("Scanner route: /scan")
@@ -321,6 +388,7 @@ def main():
                     server = HTTPServer((HOST, try_port), Handler)
                     print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
                     print(f"Scanner — open http://localhost:{try_port}/scan")
+                    print("PWA files — /manifest.webmanifest /sw.js /icon.svg")
                     server.serve_forever()
                     return
                 except OSError:
