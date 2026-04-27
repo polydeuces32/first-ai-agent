@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 *.log
 first-ai-agent.zip
+data/chat_history.json

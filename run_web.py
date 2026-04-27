@@ -65,7 +65,7 @@ def _load_chat_history():
 
 def _save_chat_history(messages):
     try:
-        kept = [messages[0]] + messages[-HISTORY_MAX_MESSAGES:]
+        kept = messages[0:1] + messages[1:][-HISTORY_MAX_MESSAGES:]
         with open(CHAT_HISTORY_FILE, "w", encoding="utf-8") as _f:
             json.dump(kept, _f, ensure_ascii=False, indent=2)
     except Exception:
