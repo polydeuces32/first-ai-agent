@@ -6,6 +6,7 @@ Routes:
 - /scan          Mobile scanner PWA
 - /dashboard     Saved document dashboard
 - /preview?file=NAME
+- /raw?file=NAME
 - /download?file=NAME
 - /save_pdf      Save generated PDF into data/documents/
 - /delete_doc    Delete a saved document and sidecars
@@ -192,6 +193,17 @@ def app_shell_css():
 """
 
 
+def agent_html():
+    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>First AI Agent</title><style>{app_shell_css()}#log{{background:#16161e;border:1px solid #3b4261;border-radius:18px;padding:1rem;min-height:220px;max-height:52vh;overflow:auto;white-space:pre-wrap;word-break:break-word}}.msg{{margin-bottom:.75rem}}.msg.user{{color:#7aa2f7}}.msg.agent{{color:#9ece6a}}form{{display:flex;gap:.5rem;margin-top:.75rem}}form input{{flex:1}}form button{{min-width:84px}}</style></head><body><main><header class='topbar'><div><small class='sub'>Local Document AI</small><h1>First AI Agent</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><p class='sub'>Ask questions about saved PDFs, OCR text, notes, CSV files, and local documents.</p><div class='actions'><a class='btn primary' href='/scan'>Scan Photos to PDF</a><a class='btn' href='/dashboard'>Dashboard</a></div></section><section class='card'><div id='log'></div><form id='f'><input id='input' placeholder='Ask or type help…' autocomplete='off'><button class='btn primary' type='submit'>Send</button></form></section></main><nav class='bottomNav'><a class='navItem active' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem' href='/dashboard'>Dashboard</a></nav><script>
+const log=document.getElementById('log'),input=document.getElementById('input'),f=document.getElementById('f');
+function add(msg,who){{const d=document.createElement('div');d.className='msg '+who;d.textContent=(who==='user'?'You: ':'Agent: ')+msg;log.appendChild(d);log.scrollTop=log.scrollHeight;}}
+async function sendMessage(text){{if(!text)return;add(text,'user');try{{const r=await fetch('/chat',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{message:text}})}});const j=await r.json();add(j.response||j.error||'No response','agent');}}catch(e){{add('Server error. Restart run_web.py and try again.','agent');}}}}
+const params=new URLSearchParams(location.search);const askDoc=params.get('ask_doc');if(askDoc)sendMessage('read '+askDoc);
+f.addEventListener('submit',e=>{{e.preventDefault();const text=input.value.trim();if(!text)return;input.value='';sendMessage(text);}});
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{{}}));
+</script></body></html>"""
+
+
 def dashboard_html():
     rows = document_rows()
     cards = []
@@ -227,7 +239,6 @@ def preview_html(name, doc_path):
     safe_name = html.escape(os.path.basename(doc_path))
     qname = quote(os.path.basename(doc_path))
     lower = doc_path.lower()
-    content = ""
     if lower.endswith(".pdf"):
         content = f"<iframe class='previewFrame' src='/raw?file={qname}' title='Preview {safe_name}'></iframe>"
     elif lower.endswith((".txt", ".md", ".markdown", ".csv")):
@@ -241,10 +252,6 @@ def preview_html(name, doc_path):
     ocr_path = doc_path + ".ocr.txt"
     ocr_link = f"<a class='btn' href='/preview?file={quote(os.path.basename(ocr_path))}'>View OCR Text</a>" if os.path.exists(ocr_path) else ""
     return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Preview {safe_name}</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Preview</small><h1>{safe_name}</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/dashboard'>Back</a></header><section class='card'><div class='actions'><a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a><a class='btn' href='/download?file={qname}'>Download</a>{ocr_link}</div></section>{content}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav>{PWA_SCRIPT}</body></html>"""
-
-
-def agent_html():
-    return HTML
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -292,10 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             doc_path = safe_doc_path(name)
             if not doc_path or not os.path.isfile(doc_path):
                 self.send_response(404); self.end_headers(); return
-            if path == "/download":
-                return self._serve_document(doc_path, attachment=True)
-            if path == "/raw":
-                return self._serve_document(doc_path, attachment=False)
+            if path == "/download": return self._serve_document(doc_path, attachment=True)
+            if path == "/raw": return self._serve_document(doc_path, attachment=False)
             self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(preview_html(name, doc_path).encode("utf-8")); return
         if path == "/dashboard":
             self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(dashboard_html().encode("utf-8")); return
@@ -324,8 +329,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "deleted": deleted})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-        if path == "/save_pdf":
-            return self._handle_save_pdf()
+        if path == "/save_pdf": return self._handle_save_pdf()
         if path != "/chat":
             self.send_response(404); self.end_headers(); return
         length = int(self.headers.get("Content-Length", 0)); body = self.rfile.read(length).decode("utf-8", errors="ignore")
