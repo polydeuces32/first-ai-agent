@@ -160,7 +160,8 @@ def document_rows():
         summary = "No summary yet. OCR or document intelligence can improve this."
         if os.path.exists(json_path):
             try:
-                meta = json.load(open(json_path, "r", encoding="utf-8"))
+                with open(json_path, "r", encoding="utf-8") as _fh:
+                    meta = json.load(_fh)
                 doc_type = meta.get("type") or doc_type
                 s = meta.get("summary") or []
                 summary = " ".join(s[:2]) if isinstance(s, list) and s else summary
@@ -232,7 +233,8 @@ def preview_html(name, doc_path):
         content = f"<iframe class='previewFrame' src='/raw?file={qname}' title='Preview {safe_name}'></iframe>"
     elif lower.endswith((".txt", ".md", ".markdown", ".csv")):
         try:
-            text = open(doc_path, "r", encoding="utf-8", errors="ignore").read()[:120000]
+            with open(doc_path, "r", encoding="utf-8", errors="ignore") as _fh:
+                text = _fh.read(120000)
         except Exception as e:
             text = f"Could not read file: {e}"
         content = f"<div class='preText'>{html.escape(text)}</div>"
@@ -271,7 +273,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_document(self, doc_path, attachment=False):
         ctype = mimetypes.guess_type(doc_path)[0] or "application/octet-stream"
-        data = open(doc_path, "rb").read()
+        try:
+            with open(doc_path, "rb") as _fh:
+                data = _fh.read()
+        except Exception as e:
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(f"Could not read file: {e}".encode("utf-8"))
+            return
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         if attachment:
@@ -361,7 +371,8 @@ class Handler(BaseHTTPRequestHandler):
         while os.path.exists(out_path):
             filename = f"{base}_{counter}{ext}"; out_path = os.path.join(DOCUMENTS_DIR, filename); counter += 1
         try:
-            open(out_path, "wb").write(pdf_bytes)
+            with open(out_path, "wb") as _fh:
+                _fh.write(pdf_bytes)
         except Exception as e:
             return self._json({"ok": False, "error": f"Could not save PDF: {e}"}, 500)
         ocr = try_local_ocr(out_path)
