@@ -6,12 +6,13 @@ Then open: http://localhost:8765
 Uses only stdlib (no Flask). Stays local, no internet (unless you use an API backend).
 """
 import base64
+import html
 import json
 import re
 import subprocess
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 # Run from project root so agent and data paths work
 import os
@@ -28,6 +29,11 @@ try:
     from pypdf import PdfReader
 except Exception:
     PdfReader = None
+
+try:
+    from src.doc_intelligence import build_document_card
+except Exception:
+    build_document_card = None
 
 # Use PORT and 0.0.0.0 when deployed (e.g. Render, Railway); localhost when local
 try:
@@ -89,8 +95,6 @@ HTML = """<!DOCTYPE html>
     form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     input[type="text"] { flex: 1; padding: 0.6rem; border: 1px solid #3b4261; border-radius: 6px; background: #16161e; color: #c0caf5; font-size: 1rem; }
     button { padding: 0.6rem 1rem; background: #7aa2f7; color: #1a1b26; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
-    button:hover { background: #89b4fa; }
-    .err { color: #f7768e; }
   </style>
 </head>
 <body>
@@ -98,6 +102,7 @@ HTML = """<!DOCTYPE html>
   <p class="sub">Local docs &amp; Q&A. Type <strong>help</strong> for commands.</p>
   <div class="toolbar">
     <a class="linkbtn primary" href="/scan">Scan photos to PDF</a>
+    <a class="linkbtn" href="/dashboard">Dashboard</a>
     <a class="linkbtn" href="/health">Health check</a>
   </div>
   <p class="sub" style="margin-top:0; color:#7aa2f7;">If you see &quot;no server&quot; or can&apos;t connect: start the server first — double-click <strong>run_web.command</strong> or run <strong>.venv/bin/python run_web.py</strong> in the project folder, then open this page.</p>
@@ -161,12 +166,120 @@ def safe_filename(name):
     return name or "scan.pdf"
 
 
-def inject_pwa(html):
-    if "manifest.webmanifest" not in html:
-        html = html.replace("</head>", PWA_HEAD + "</head>")
-    if "serviceWorker" not in html:
-        html = html.replace("</body>", PWA_SCRIPT + "</body>")
-    return html
+def inject_pwa(html_text):
+    if "manifest.webmanifest" not in html_text:
+        html_text = html_text.replace("</head>", PWA_HEAD + "</head>")
+    if "serviceWorker" not in html_text:
+        html_text = html_text.replace("</body>", PWA_SCRIPT + "</body>")
+    return html_text
+
+
+def get_document_rows():
+    rows = []
+    if not os.path.isdir(DOCUMENTS_DIR):
+        return rows
+    for name in sorted(os.listdir(DOCUMENTS_DIR), key=lambda n: os.path.getmtime(os.path.join(DOCUMENTS_DIR, n)), reverse=True):
+        lower = name.lower()
+        if lower.endswith((".ocr.txt", ".json")) or lower.startswith("_ocr_tmp_page"):
+            continue
+        if not lower.endswith((".pdf", ".txt", ".md", ".markdown", ".csv")):
+            continue
+        path = os.path.join(DOCUMENTS_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        stat = os.stat(path)
+        ocr_path = path + ".ocr.txt"
+        json_path = path + ".json"
+        doc_type = "document"
+        summary = ""
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                doc_type = meta.get("type") or doc_type
+                s = meta.get("summary") or []
+                summary = " ".join(s[:2]) if isinstance(s, list) else str(s)
+            except Exception:
+                pass
+        elif build_document_card and (os.path.exists(ocr_path) or lower.endswith((".txt", ".md", ".markdown"))):
+            try:
+                meta = build_document_card(path)
+                doc_type = meta.get("type") or doc_type
+                s = meta.get("summary") or []
+                summary = " ".join(s[:2]) if isinstance(s, list) else ""
+            except Exception:
+                pass
+        rows.append({
+            "name": name,
+            "size_kb": max(1, round(stat.st_size / 1024)),
+            "mtime": stat.st_mtime,
+            "date": __import__("datetime").datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %Y %I:%M %p"),
+            "ocr": os.path.exists(ocr_path),
+            "json": os.path.exists(json_path),
+            "type": doc_type,
+            "summary": summary,
+        })
+    return rows
+
+
+def build_dashboard_html():
+    rows = get_document_rows()
+    cards = []
+    if not rows:
+        cards.append("""
+        <section class='empty card'>
+          <h2>No saved documents yet</h2>
+          <p class='sub'>Start by scanning photos into a PDF, then tap Save to Agent.</p>
+          <a class='btn primary' href='/scan'>Open Scanner</a>
+        </section>
+        """)
+    for r in rows:
+        name = html.escape(r["name"])
+        qname = quote(r["name"])
+        summary = html.escape(r.get("summary") or "No summary yet. OCR or document intelligence can improve this.")
+        badges = []
+        badges.append(f"<span>{html.escape(r['type'])}</span>")
+        badges.append("<span>OCR</span>" if r["ocr"] else "<span class='mutedBadge'>No OCR</span>")
+        badges.append("<span>Smart card</span>" if r["json"] else "<span class='mutedBadge'>No card</span>")
+        cards.append(f"""
+        <article class='doc card' data-name='{name.lower()}'>
+          <div class='docTop'>
+            <div><h2>{name}</h2><p class='sub'>{html.escape(r['date'])} · {r['size_kb']} KB</p></div>
+          </div>
+          <div class='badges'>{''.join(badges)}</div>
+          <p class='summary'>{summary}</p>
+          <div class='actions'>
+            <a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a>
+            <a class='btn' href='/scan'>Scan More</a>
+          </div>
+        </article>
+        """)
+    return f"""<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>
+  <link rel='manifest' href='/manifest.webmanifest'>
+  <link rel='icon' href='/icon.svg' type='image/svg+xml'>
+  <meta name='theme-color' content='#1a1b26'>
+  <title>Document Dashboard</title>
+  <style>
+    *{{box-sizing:border-box}} body{{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}} main{{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}} a{{color:#7aa2f7;text-decoration:none}} .topbar{{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.9);backdrop-filter:blur(14px);border-bottom:1px solid rgba(59,66,97,.65)}} .brand small,.sub{{color:rgba(192,202,245,.76)}} h1{{font-size:1.45rem;margin:.25rem 0}} h2{{font-size:1rem;margin:.1rem 0}} .card{{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}} input{{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}} .badges{{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}} .badges span{{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}} .badges .mutedBadge{{color:#e0af68}} .summary{{color:rgba(192,202,245,.82);line-height:1.45}} .actions{{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}} .btn{{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:850}} .btn.primary{{background:#7aa2f7;color:#1a1b26;border:0}} .bottomNav{{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid rgba(59,66,97,.85);display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}} .navItem{{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;text-decoration:none}} .navItem.active{{background:#292e42;color:#7aa2f7}}
+  </style>
+</head>
+<body>
+<main>
+  <header class='topbar'><div class='brand'><small>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header>
+  <section class='card'><input id='search' placeholder='Search saved documents…'></section>
+  {''.join(cards)}
+</main>
+<nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav>
+<script>
+const search=document.getElementById('search');
+if(search) search.addEventListener('input',()=>{{const q=search.value.toLowerCase();document.querySelectorAll('.doc').forEach(c=>c.style.display=c.dataset.name.includes(q)?'block':'none')}});
+if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{{}}));
+</script>
+</body></html>"""
 
 
 def extract_pdf_text_if_any(path):
@@ -192,13 +305,11 @@ def try_local_ocr(pdf_path):
         with open(ocr_txt_path, "w", encoding="utf-8") as f:
             f.write(normal_text)
         return {"ok": True, "mode": "pdf_text", "path": ocr_txt_path, "chars": len(normal_text)}
-
     try:
         subprocess.check_output(["tesseract", "--version"], stderr=subprocess.STDOUT, text=True, timeout=5)
         subprocess.check_output(["pdftoppm", "-h"], stderr=subprocess.STDOUT, text=True, timeout=5)
     except Exception:
         return {"ok": False, "mode": "missing_tools", "message": "OCR not installed. Run: brew install tesseract poppler && pip install -r requirements-ocr.txt"}
-
     tmp_prefix = os.path.join(DOCUMENTS_DIR, "_ocr_tmp_page")
     try:
         subprocess.check_output(["pdftoppm", "-png", "-r", "180", "-f", "1", "-l", "5", pdf_path, tmp_prefix], stderr=subprocess.STDOUT, text=True, timeout=60)
@@ -258,6 +369,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(b"ok")
+            return
+        if path == "/dashboard":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(build_dashboard_html().encode("utf-8"))
             return
         if path in ("/scan", "/scan.html"):
             try:
@@ -349,6 +466,7 @@ class Handler(BaseHTTPRequestHandler):
             "path": f"data/documents/{filename}",
             "ask_url": f"/?ask_doc={filename}",
             "ocr": ocr,
+            "dashboard_url": "/dashboard",
             "message": f"Saved to data/documents/{filename}"
         })
 
@@ -370,10 +488,12 @@ def main():
         if HOST == "127.0.0.1":
             print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
             print(f"Scanner — open http://localhost:{try_port}/scan")
+            print(f"Dashboard — open http://localhost:{try_port}/dashboard")
             print("PWA files — /manifest.webmanifest /sw.js /icon.svg")
         else:
             print(f"First AI Agent — running on port {try_port}. Use your deployment URL (e.g. Render dashboard).")
             print("Scanner route: /scan")
+            print("Dashboard route: /dashboard")
         print("Press Ctrl+C to stop.")
         try:
             server.serve_forever()
@@ -388,6 +508,7 @@ def main():
                     server = HTTPServer((HOST, try_port), Handler)
                     print(f"First AI Agent — open http://localhost:{try_port} in your browser.")
                     print(f"Scanner — open http://localhost:{try_port}/scan")
+                    print(f"Dashboard — open http://localhost:{try_port}/dashboard")
                     print("PWA files — /manifest.webmanifest /sw.js /icon.svg")
                     server.serve_forever()
                     return
