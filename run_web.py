@@ -44,7 +44,7 @@ try:
     PORT = int(os.environ.get("PORT") or 8765)
 except (TypeError, ValueError):
     PORT = 8765
-HOST = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+HOST = "0.0.0.0"
 DOCUMENTS_DIR = os.path.join(_project_root, "data", "documents")
 os.makedirs(DOCUMENTS_DIR, exist_ok=True)
 
@@ -599,9 +599,17 @@ def main():
     except OSError:
         server = HTTPServer((HOST, PORT + 1), Handler)
     actual = server.server_port
-    print(f"First AI Agent — open http://localhost:{actual}")
-    print(f"Scanner — open http://localhost:{actual}/scan")
-    print(f"Dashboard — open http://localhost:{actual}/dashboard")
+    try:
+        import socket as _s
+        with _s.socket(_s.AF_INET, _s.SOCK_DGRAM) as _sock:
+            _sock.connect(("8.8.8.8", 80))
+            lan_ip = _sock.getsockname()[0]
+    except Exception:
+        lan_ip = "YOUR_MACHINE_IP"
+    print(f"Local:   http://localhost:{actual}")
+    print(f"Network: http://{lan_ip}:{actual}  ← open this on your iPhone")
+    print(f"Scanner: http://{lan_ip}:{actual}/scan")
+    print(f"Dashboard: http://{lan_ip}:{actual}/dashboard")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
