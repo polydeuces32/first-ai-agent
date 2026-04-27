@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>First AI Agent Scanner</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #1a1b26;
+      color: #c0caf5;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    main {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    a { color: #7aa2f7; text-decoration: none; }
+    h1 { font-size: 1.5rem; margin: 0.5rem 0; }
+    p { line-height: 1.5; }
+    .card {
+      background: #16161e;
+      border: 1px solid #3b4261;
+      border-radius: 12px;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+    .sub { opacity: 0.85; font-size: 0.95rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 1rem; }
+    label.button, button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      background: #7aa2f7;
+      color: #1a1b26;
+      min-height: 44px;
+    }
+    button.secondary, label.secondary { background: #292e42; color: #c0caf5; border: 1px solid #3b4261; }
+    button.danger { background: #f7768e; color: #1a1b26; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    input[type="file"] { display: none; }
+    #pages {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .page {
+      border: 1px solid #3b4261;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #101014;
+    }
+    .page img {
+      width: 100%;
+      height: 190px;
+      object-fit: cover;
+      display: block;
+      background: #0f1018;
+    }
+    .page-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      font-size: 0.8rem;
+    }
+    .small-btn {
+      min-height: 34px;
+      padding: 0.4rem 0.55rem;
+      font-size: 0.8rem;
+      border-radius: 6px;
+    }
+    .status {
+      margin-top: 0.75rem;
+      color: #9ece6a;
+      white-space: pre-wrap;
+    }
+    .warn { color: #e0af68; }
+    .error { color: #f7768e; }
+    footer { margin: 2rem 0 1rem; opacity: 0.7; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+<main>
+  <p><a href="/">← Back to Agent</a></p>
+
+  <section class="card">
+    <h1>First AI Agent Scanner</h1>
+    <p class="sub">Take phone pictures or upload images, preview the pages, and export them as one PDF. Phase 1 keeps everything in the browser and downloads the PDF to your device.</p>
+    <p class="sub warn">Note: this creates an image-based PDF. Text search / AI reading from scanned pictures may need OCR in a later phase.</p>
+
+    <div class="actions">
+      <label class="button" for="cameraInput">Scan / Add Photos</label>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple>
+
+      <label class="button secondary" for="fileInput">Choose Images</label>
+      <input id="fileInput" type="file" accept="image/*" multiple>
+
+      <button id="makePdfBtn" disabled>Download PDF</button>
+      <button id="clearBtn" class="danger" disabled>Clear</button>
+    </div>
+
+    <div id="status" class="status">No images selected yet.</div>
+  </section>
+
+  <section class="card">
+    <h2>Pages</h2>
+    <div id="pages"></div>
+  </section>
+
+  <footer>
+    Privacy-first Phase 1: images are processed locally in your browser and are not uploaded by this page.
+  </footer>
+</main>
+
+<script>
+  const cameraInput = document.getElementById('cameraInput');
+  const fileInput = document.getElementById('fileInput');
+  const makePdfBtn = document.getElementById('makePdfBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const pagesEl = document.getElementById('pages');
+  const statusEl = document.getElementById('status');
+
+  let pages = [];
+
+  function setStatus(text, type = '') {
+    statusEl.textContent = text;
+    statusEl.className = 'status ' + type;
+  }
+
+  function updateButtons() {
+    makePdfBtn.disabled = pages.length === 0;
+    clearBtn.disabled = pages.length === 0;
+  }
+
+  function renderPages() {
+    pagesEl.innerHTML = '';
+    pages.forEach((page, index) => {
+      const card = document.createElement('div');
+      card.className = 'page';
+
+      const img = document.createElement('img');
+      img.src = page.dataUrl;
+      img.alt = 'Page ' + (index + 1);
+
+      const footer = document.createElement('div');
+      footer.className = 'page-footer';
+
+      const label = document.createElement('span');
+      label.textContent = 'Page ' + (index + 1);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'small-btn danger';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', () => {
+        pages.splice(index, 1);
+        renderPages();
+        setStatus(pages.length ? `${pages.length} image(s) ready for PDF.` : 'No images selected yet.');
+      });
+
+      footer.appendChild(label);
+      footer.appendChild(removeBtn);
+      card.appendChild(img);
+      card.appendChild(footer);
+      pagesEl.appendChild(card);
+    });
+    updateButtons();
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Could not read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function addFiles(fileList) {
+    const files = Array.from(fileList || []).filter(file => file.type.startsWith('image/'));
+    if (!files.length) {
+      setStatus('Please choose image files only.', 'error');
+      return;
+    }
+
+    setStatus('Loading images...');
+    for (const file of files) {
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        pages.push({ name: file.name || 'camera-photo', dataUrl });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    renderPages();
+    setStatus(`${pages.length} image(s) ready for PDF.`);
+  }
+
+  cameraInput.addEventListener('change', e => addFiles(e.target.files));
+  fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+  clearBtn.addEventListener('click', () => {
+    pages = [];
+    cameraInput.value = '';
+    fileInput.value = '';
+    renderPages();
+    setStatus('No images selected yet.');
+  });
+
+  function loadImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
+  function escapePdfText(text) {
+    return String(text).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  }
+
+  async function makePdf() {
+    if (!pages.length) return;
+    makePdfBtn.disabled = true;
+    setStatus('Building PDF...');
+
+    try {
+      const pageImages = [];
+      const maxWidth = 1240;
+      const maxHeight = 1754;
+
+      for (const page of pages) {
+        const img = await loadImage(page.dataUrl);
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const jpg = canvas.toDataURL('image/jpeg', 0.88);
+        const bytes = atob(jpg.split(',')[1]);
+        pageImages.push({ w, h, bytes });
+      }
+
+      const objects = [];
+      const pagesKids = [];
+      const catalogId = 1;
+      const pagesId = 2;
+      let nextId = 3;
+
+      for (const item of pageImages) {
+        const pageId = nextId++;
+        const imageId = nextId++;
+        const contentId = nextId++;
+        pagesKids.push(pageId);
+
+        const pageObj = `<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${item.w} ${item.h}] /Resources << /XObject << /Im${imageId} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`;
+        objects[pageId] = pageObj;
+
+        const imgObjHeader = `<< /Type /XObject /Subtype /Image /Width ${item.w} /Height ${item.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${item.bytes.length} >>\nstream\n`;
+        const imgObjFooter = `\nendstream`;
+        objects[imageId] = { binary: true, header: imgObjHeader, data: item.bytes, footer: imgObjFooter };
+
+        const stream = `q\n${item.w} 0 0 ${item.h} 0 0 cm\n/Im${imageId} Do\nQ`;
+        objects[contentId] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+      }
+
+      objects[catalogId] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+      objects[pagesId] = `<< /Type /Pages /Kids [${pagesKids.map(id => `${id} 0 R`).join(' ')}] /Count ${pagesKids.length} >>`;
+
+      let pdf = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+      const offsets = [0];
+      for (let i = 1; i < objects.length; i++) {
+        if (!objects[i]) continue;
+        offsets[i] = pdf.length;
+        pdf += `${i} 0 obj\n`;
+        if (typeof objects[i] === 'string') {
+          pdf += objects[i] + '\n';
+        } else {
+          pdf += objects[i].header + objects[i].data + objects[i].footer + '\n';
+        }
+        pdf += 'endobj\n';
+      }
+
+      const xrefOffset = pdf.length;
+      pdf += `xref\n0 ${objects.length}\n`;
+      pdf += '0000000000 65535 f \n';
+      for (let i = 1; i < objects.length; i++) {
+        const off = offsets[i] || 0;
+        pdf += String(off).padStart(10, '0') + ' 00000 n \n';
+      }
+      pdf += `trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+      const byteArray = new Uint8Array(pdf.length);
+      for (let i = 0; i < pdf.length; i++) byteArray[i] = pdf.charCodeAt(i) & 0xff;
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      a.href = url;
+      a.download = `first-ai-agent-scan-${stamp}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setStatus(`PDF created with ${pages.length} page(s). Download complete.`);
+    } catch (err) {
+      console.error(err);
+      setStatus('Could not build PDF. Try fewer or smaller images.', 'error');
+    } finally {
+      updateButtons();
+    }
+  }
+
+  makePdfBtn.addEventListener('click', makePdf);
+</script>
+</body>
+</html>
