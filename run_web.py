@@ -8,6 +8,7 @@ Uses only stdlib (no Flask). Stays local, no internet (unless you use an API bac
 import base64
 import json
 import re
+import subprocess
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs
@@ -22,6 +23,11 @@ if "LLM_BACKEND" not in os.environ:
     os.environ["LLM_BACKEND"] = "none"
 
 from src.agent import process_turn, SYSTEM_PROMPT
+
+try:
+    from pypdf import PdfReader
+except Exception:
+    PdfReader = None
 
 # Use PORT and 0.0.0.0 when deployed (e.g. Render, Railway); localhost when local
 try:
@@ -99,9 +105,7 @@ HTML = """<!DOCTYPE html>
     }
     const params = new URLSearchParams(window.location.search);
     const askDoc = params.get("ask_doc");
-    if (askDoc) {
-      sendMessage("read " + askDoc);
-    }
+    if (askDoc) sendMessage("read " + askDoc);
     f.addEventListener("submit", async (e) => {
       e.preventDefault();
       const text = input.value.trim();
@@ -123,9 +127,65 @@ def safe_filename(name):
     return name or "scan.pdf"
 
 
+def extract_pdf_text_if_any(path):
+    if PdfReader is None:
+        return ""
+    try:
+        reader = PdfReader(path)
+        parts = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            if text.strip():
+                parts.append(text.strip())
+        return "\n\n".join(parts).strip()
+    except Exception:
+        return ""
+
+
+def try_local_ocr(pdf_path):
+    """Optional OCR. Uses external tools only when installed. Never blocks normal PDF saving."""
+    ocr_txt_path = pdf_path + ".ocr.txt"
+    normal_text = extract_pdf_text_if_any(pdf_path)
+    if normal_text:
+        with open(ocr_txt_path, "w", encoding="utf-8") as f:
+            f.write(normal_text)
+        return {"ok": True, "mode": "pdf_text", "path": ocr_txt_path, "chars": len(normal_text)}
+
+    try:
+        subprocess.check_output(["tesseract", "--version"], stderr=subprocess.STDOUT, text=True, timeout=5)
+        subprocess.check_output(["pdftoppm", "-h"], stderr=subprocess.STDOUT, text=True, timeout=5)
+    except Exception:
+        return {"ok": False, "mode": "missing_tools", "message": "OCR not installed. Run: brew install tesseract poppler && pip install -r requirements-ocr.txt"}
+
+    tmp_prefix = os.path.join(DOCUMENTS_DIR, "_ocr_tmp_page")
+    try:
+        subprocess.check_output(["pdftoppm", "-png", "-r", "180", "-f", "1", "-l", "5", pdf_path, tmp_prefix], stderr=subprocess.STDOUT, text=True, timeout=60)
+        chunks = []
+        for name in sorted(os.listdir(DOCUMENTS_DIR)):
+            if not name.startswith("_ocr_tmp_page") or not name.endswith(".png"):
+                continue
+            img_path = os.path.join(DOCUMENTS_DIR, name)
+            try:
+                text = subprocess.check_output(["tesseract", img_path, "stdout"], stderr=subprocess.STDOUT, text=True, timeout=60)
+                if text.strip():
+                    chunks.append(f"--- {name} ---\n{text.strip()}")
+            finally:
+                try:
+                    os.remove(img_path)
+                except Exception:
+                    pass
+        text = "\n\n".join(chunks).strip()
+        if not text:
+            return {"ok": False, "mode": "no_text", "message": "OCR ran, but no text was detected."}
+        with open(ocr_txt_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return {"ok": True, "mode": "ocr", "path": ocr_txt_path, "chars": len(text)}
+    except Exception as e:
+        return {"ok": False, "mode": "ocr_error", "message": str(e)}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        # Serve the app, health check, and scanner page.
         path = self.path.split("?")[0]
         if path == "/health":
             self.send_response(200)
@@ -216,11 +276,13 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json({"ok": False, "error": f"Could not save PDF: {e}"}, status=500)
             return
+        ocr = try_local_ocr(out_path)
         self._send_json({
             "ok": True,
             "filename": filename,
             "path": f"data/documents/{filename}",
             "ask_url": f"/?ask_doc={filename}",
+            "ocr": ocr,
             "message": f"Saved to data/documents/{filename}"
         })
 
@@ -228,10 +290,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.end_headers()
-        try:
-            body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        except (TypeError, ValueError):
-            body = json.dumps({"response": str(obj)}).encode("utf-8")
+        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.wfile.write(body)
 
     def log_message(self, *_):
