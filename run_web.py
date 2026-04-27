@@ -5,6 +5,7 @@ Routes:
 - /              Agent chat
 - /scan          Mobile scanner PWA
 - /dashboard     Saved document dashboard
+- /preview?file=NAME
 - /download?file=NAME
 - /save_pdf      Save generated PDF into data/documents/
 - /delete_doc    Delete a saved document and sidecars
@@ -185,6 +186,12 @@ def document_rows():
     return rows
 
 
+def app_shell_css():
+    return """
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}main{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}a{color:#7aa2f7;text-decoration:none}.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.92);backdrop-filter:blur(14px);border-bottom:1px solid #3b4261}h1{font-size:1.45rem;margin:.2rem 0}h2{font-size:1rem;margin:.1rem 0}.sub{color:rgba(192,202,245,.76)}.card{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}input{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}.badges{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}.badges span{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}.summary{color:rgba(192,202,245,.82);line-height:1.45}.actions{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}.btn{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:850;text-align:center}button.btn{width:100%;font:inherit;cursor:pointer}.btn.primary{background:#7aa2f7;color:#1a1b26;border:0}.btn.danger{background:#f7768e;color:#1a1b26;border:0}.bottomNav{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid #3b4261;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}.navItem{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;text-decoration:none}.navItem.active{background:#292e42;color:#7aa2f7}.previewFrame{width:100%;height:72vh;border:1px solid #3b4261;border-radius:18px;background:#101014}.preText{white-space:pre-wrap;line-height:1.5;background:#101014;border:1px solid #3b4261;border-radius:18px;padding:1rem;overflow:auto;max-height:72vh}
+"""
+
+
 def dashboard_html():
     rows = document_rows()
     cards = []
@@ -201,20 +208,39 @@ def dashboard_html():
   <div class='badges'><span>{html.escape(r['type'])}</span><span>{'OCR' if r['ocr'] else 'No OCR'}</span><span>{'Smart card' if r['json'] else 'No card'}</span></div>
   <p class='summary'>{summary}</p>
   <div class='actions'>
-    <a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a>
+    <a class='btn primary' href='/preview?file={qname}'>Preview</a>
+    <a class='btn' href='/?ask_doc={qname}'>Ask AI</a>
     <a class='btn' href='/download?file={qname}'>Download</a>
     <button class='btn shareBtn' data-file='{name}'>Share</button>
     <button class='btn danger deleteBtn' data-file='{name}'>Delete</button>
   </div>
 </article>""")
-    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Document Dashboard</title><style>
-*{{box-sizing:border-box}}body{{margin:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:radial-gradient(circle at top,#25283a 0,#1a1b26 48%);color:#c0caf5;min-height:100vh}}main{{max-width:820px;margin:0 auto;padding:1rem 1rem 6rem}}a{{color:#7aa2f7;text-decoration:none}}.topbar{{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:calc(.75rem + env(safe-area-inset-top,0px)) 1rem .75rem;margin:0 -1rem 1rem;background:rgba(26,27,38,.92);backdrop-filter:blur(14px);border-bottom:1px solid #3b4261}}h1{{font-size:1.45rem;margin:.2rem 0}}h2{{font-size:1rem;margin:.1rem 0}}.sub{{color:rgba(192,202,245,.76)}}.card{{background:rgba(22,22,30,.96);border:1px solid #3b4261;border-radius:20px;padding:1rem;margin:1rem 0}}input{{width:100%;padding:.9rem;border:1px solid #3b4261;border-radius:14px;background:#101014;color:#c0caf5;font-size:1rem}}.badges{{display:flex;flex-wrap:wrap;gap:.45rem;margin:.75rem 0}}.badges span{{font-size:.76rem;font-weight:800;border-radius:999px;padding:.35rem .55rem;background:#292e42;color:#9ece6a;border:1px solid #3b4261}}.summary{{color:rgba(192,202,245,.82);line-height:1.45}}.actions{{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:1rem}}.btn{{display:flex;align-items:center;justify-content:center;min-height:50px;border-radius:14px;background:#292e42;color:#c0caf5;border:1px solid #3b4261;font-weight:850;text-align:center}}button.btn{{width:100%;font:inherit;cursor:pointer}}.btn.primary{{background:#7aa2f7;color:#1a1b26;border:0}}.btn.danger{{background:#f7768e;color:#1a1b26;border:0}}.bottomNav{{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.7rem .85rem calc(.7rem + env(safe-area-inset-bottom,0px));background:rgba(22,22,30,.94);backdrop-filter:blur(16px);border-top:1px solid #3b4261;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem}}.navItem{{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:14px;color:rgba(192,202,245,.76);font-size:.8rem;font-weight:800;text-decoration:none}}.navItem.active{{background:#292e42;color:#7aa2f7}}
-</style></head><body><main><header class='topbar'><div><small class='sub'>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><input id='search' placeholder='Search saved documents…'></section>{''.join(cards)}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav><script>
+    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Document Dashboard</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><input id='search' placeholder='Search saved documents…'></section>{''.join(cards)}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav><script>
 const search=document.getElementById('search');if(search)search.addEventListener('input',()=>{{const q=search.value.toLowerCase();document.querySelectorAll('.doc').forEach(c=>c.style.display=c.dataset.name.includes(q)?'block':'none')}});
 document.querySelectorAll('.deleteBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;if(!confirm('Delete '+file+' and related OCR/metadata files?'))return;const r=await fetch('/delete_doc',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{file}})}});const j=await r.json();if(j.ok)location.reload();else alert(j.error||'Delete failed');}}));
 document.querySelectorAll('.shareBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;const url='/download?file='+encodeURIComponent(file);try{{if(navigator.share){{await navigator.share({{title:file,text:'Document from First AI Agent',url:location.origin+url}});}}else location.href=url;}}catch(e){{if(e.name!=='AbortError')location.href=url;}}}}));
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{{}}));
 </script></body></html>"""
+
+
+def preview_html(name, doc_path):
+    safe_name = html.escape(os.path.basename(doc_path))
+    qname = quote(os.path.basename(doc_path))
+    lower = doc_path.lower()
+    content = ""
+    if lower.endswith(".pdf"):
+        content = f"<iframe class='previewFrame' src='/raw?file={qname}' title='Preview {safe_name}'></iframe>"
+    elif lower.endswith((".txt", ".md", ".markdown", ".csv")):
+        try:
+            text = open(doc_path, "r", encoding="utf-8", errors="ignore").read()[:120000]
+        except Exception as e:
+            text = f"Could not read file: {e}"
+        content = f"<div class='preText'>{html.escape(text)}</div>"
+    else:
+        content = "<section class='card'><p class='sub'>Preview is not available for this file type. Download it instead.</p></section>"
+    ocr_path = doc_path + ".ocr.txt"
+    ocr_link = f"<a class='btn' href='/preview?file={quote(os.path.basename(ocr_path))}'>View OCR Text</a>" if os.path.exists(ocr_path) else ""
+    return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Preview {safe_name}</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Preview</small><h1>{safe_name}</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/dashboard'>Back</a></header><section class='card'><div class='actions'><a class='btn primary' href='/?ask_doc={qname}'>Ask AI</a><a class='btn' href='/download?file={qname}'>Download</a>{ocr_link}</div></section>{content}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav>{PWA_SCRIPT}</body></html>"""
 
 
 def agent_html():
@@ -243,6 +269,16 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(f"Not found: {filename} ({e})".encode("utf-8"))
 
+    def _serve_document(self, doc_path, attachment=False):
+        ctype = mimetypes.guess_type(doc_path)[0] or "application/octet-stream"
+        data = open(doc_path, "rb").read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        if attachment:
+            self.send_header("Content-Disposition", f"attachment; filename=\"{os.path.basename(doc_path)}\"")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -251,17 +287,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/icon.svg": return self._serve_file("icon.svg", "image/svg+xml; charset=utf-8")
         if path == "/health":
             self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers(); self.wfile.write(b"ok"); return
-        if path == "/download":
+        if path in ("/download", "/raw", "/preview"):
             name = parse_qs(parsed.query).get("file", [""])[0]
             doc_path = safe_doc_path(name)
             if not doc_path or not os.path.isfile(doc_path):
                 self.send_response(404); self.end_headers(); return
-            ctype = mimetypes.guess_type(doc_path)[0] or "application/octet-stream"
-            data = open(doc_path, "rb").read()
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Disposition", f"attachment; filename=\"{os.path.basename(doc_path)}\"")
-            self.end_headers(); self.wfile.write(data); return
+            if path == "/download":
+                return self._serve_document(doc_path, attachment=True)
+            if path == "/raw":
+                return self._serve_document(doc_path, attachment=False)
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(preview_html(name, doc_path).encode("utf-8")); return
         if path == "/dashboard":
             self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(dashboard_html().encode("utf-8")); return
         if path in ("/scan", "/scan.html"):
@@ -330,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._json({"ok": False, "error": f"Could not save PDF: {e}"}, 500)
         ocr = try_local_ocr(out_path)
-        return self._json({"ok": True, "filename": filename, "path": f"data/documents/{filename}", "ask_url": f"/?ask_doc={filename}", "download_url": f"/download?file={quote(filename)}", "ocr": ocr, "dashboard_url": "/dashboard", "message": f"Saved to data/documents/{filename}"})
+        return self._json({"ok": True, "filename": filename, "path": f"data/documents/{filename}", "ask_url": f"/?ask_doc={filename}", "download_url": f"/download?file={quote(filename)}", "preview_url": f"/preview?file={quote(filename)}", "ocr": ocr, "dashboard_url": "/dashboard", "message": f"Saved to data/documents/{filename}"})
 
     def log_message(self, *_):
         pass
