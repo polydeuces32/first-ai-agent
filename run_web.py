@@ -104,6 +104,33 @@ def extract_pdf_text_if_any(path):
         return ""
 
 
+def read_saved_document_for_chat(filename):
+    doc_path = safe_doc_path(filename)
+    if not doc_path or not os.path.isfile(doc_path):
+        return "I could not find that saved document. Open the Dashboard to confirm the file is still there."
+    sidecar = doc_path + ".ocr.txt"
+    if os.path.exists(sidecar):
+        try:
+            text = open(sidecar, "r", encoding="utf-8", errors="ignore").read().strip()
+            if text:
+                return f"Reading OCR text for {os.path.basename(doc_path)}:\n\n{text[:9000]}" + ("\n\n[... truncated ...]" if len(text) > 9000 else "")
+        except Exception as e:
+            return f"I found the OCR file, but could not read it: {e}"
+    lower = doc_path.lower()
+    if lower.endswith(".pdf"):
+        text = extract_pdf_text_if_any(doc_path)
+        if text:
+            return f"Reading PDF text for {os.path.basename(doc_path)}:\n\n{text[:9000]}" + ("\n\n[... truncated ...]" if len(text) > 9000 else "")
+        return "This PDF looks image-based or has no selectable text. Install OCR with: brew install tesseract poppler && pip install -r requirements-ocr.txt, then rescan or save again."
+    if lower.endswith((".txt", ".md", ".markdown", ".csv")):
+        try:
+            text = open(doc_path, "r", encoding="utf-8", errors="ignore").read().strip()
+            return f"Reading {os.path.basename(doc_path)}:\n\n{text[:9000]}" + ("\n\n[... truncated ...]" if len(text) > 9000 else "")
+        except Exception as e:
+            return f"I found the file, but could not read it: {e}"
+    return "This file type can be downloaded or previewed, but the AI reader currently supports PDF, TXT, MD, and CSV."
+
+
 def try_local_ocr(pdf_path):
     ocr_txt_path = pdf_path + ".ocr.txt"
     normal_text = extract_pdf_text_if_any(pdf_path)
@@ -175,15 +202,7 @@ def document_rows():
                 summary = " ".join(s[:2]) if isinstance(s, list) and s else summary
             except Exception:
                 pass
-        rows.append({
-            "name": name,
-            "date": datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %Y %I:%M %p"),
-            "size_kb": max(1, round(stat.st_size / 1024)),
-            "ocr": os.path.exists(ocr_path),
-            "json": os.path.exists(json_path),
-            "type": doc_type,
-            "summary": summary,
-        })
+        rows.append({"name": name, "date": datetime.fromtimestamp(stat.st_mtime).strftime("%b %d, %Y %I:%M %p"), "size_kb": max(1, round(stat.st_size / 1024)), "ocr": os.path.exists(ocr_path), "json": os.path.exists(json_path), "type": doc_type, "summary": summary})
     return rows
 
 
@@ -213,20 +232,7 @@ def dashboard_html():
         name = html.escape(r["name"])
         qname = quote(r["name"])
         summary = html.escape(r["summary"])
-        cards.append(f"""
-<article class='doc card' data-name='{name.lower()}'>
-  <h2>{name}</h2>
-  <p class='sub'>{html.escape(r['date'])} · {r['size_kb']} KB</p>
-  <div class='badges'><span>{html.escape(r['type'])}</span><span>{'OCR' if r['ocr'] else 'No OCR'}</span><span>{'Smart card' if r['json'] else 'No card'}</span></div>
-  <p class='summary'>{summary}</p>
-  <div class='actions'>
-    <a class='btn primary' href='/preview?file={qname}'>Preview</a>
-    <a class='btn' href='/?ask_doc={qname}'>Ask AI</a>
-    <a class='btn' href='/download?file={qname}'>Download</a>
-    <button class='btn shareBtn' data-file='{name}'>Share</button>
-    <button class='btn danger deleteBtn' data-file='{name}'>Delete</button>
-  </div>
-</article>""")
+        cards.append(f"""<article class='doc card' data-name='{name.lower()}'><h2>{name}</h2><p class='sub'>{html.escape(r['date'])} · {r['size_kb']} KB</p><div class='badges'><span>{html.escape(r['type'])}</span><span>{'OCR' if r['ocr'] else 'No OCR'}</span><span>{'Smart card' if r['json'] else 'No card'}</span></div><p class='summary'>{summary}</p><div class='actions'><a class='btn primary' href='/preview?file={qname}'>Preview</a><a class='btn' href='/?ask_doc={qname}'>Ask AI</a><a class='btn' href='/download?file={qname}'>Download</a><button class='btn shareBtn' data-file='{name}'>Share</button><button class='btn danger deleteBtn' data-file='{name}'>Delete</button></div></article>""")
     return f"""<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover'>{PWA_HEAD}<title>Document Dashboard</title><style>{app_shell_css()}</style></head><body><main><header class='topbar'><div><small class='sub'>Document Vault</small><h1>Dashboard</h1></div><a class='btn' style='padding:0 .8rem;min-height:40px' href='/scan'>Scan</a></header><section class='card'><input id='search' placeholder='Search saved documents…'></section>{''.join(cards)}</main><nav class='bottomNav'><a class='navItem' href='/'>Agent</a><a class='navItem' href='/scan'>Scan</a><a class='navItem active' href='/dashboard'>Dashboard</a></nav><script>
 const search=document.getElementById('search');if(search)search.addEventListener('input',()=>{{const q=search.value.toLowerCase();document.querySelectorAll('.doc').forEach(c=>c.style.display=c.dataset.name.includes(q)?'block':'none')}});
 document.querySelectorAll('.deleteBtn').forEach(btn=>btn.addEventListener('click',async()=>{{const file=btn.dataset.file;if(!confirm('Delete '+file+' and related OCR/metadata files?'))return;const r=await fetch('/delete_doc',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{file}})}});const j=await r.json();if(j.ok)location.reload();else alert(j.error||'Delete failed');}}));
@@ -267,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
             data = open(path, "rb").read()
             self.send_response(200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(data)
         except Exception as e:
@@ -281,6 +287,7 @@ class Handler(BaseHTTPRequestHandler):
         data = open(doc_path, "rb").read()
         self.send_response(200)
         self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "no-store")
         if attachment:
             self.send_header("Content-Disposition", f"attachment; filename=\"{os.path.basename(doc_path)}\"")
         self.end_headers()
@@ -293,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/sw.js": return self._serve_file("sw.js", "application/javascript; charset=utf-8")
         if path == "/icon.svg": return self._serve_file("icon.svg", "image/svg+xml; charset=utf-8")
         if path == "/health":
-            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers(); self.wfile.write(b"ok"); return
+            self.send_response(200); self.send_header("Content-Type", "text/plain"); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b"ok"); return
         if path in ("/download", "/raw", "/preview"):
             name = parse_qs(parsed.query).get("file", [""])[0]
             doc_path = safe_doc_path(name)
@@ -301,17 +308,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404); self.end_headers(); return
             if path == "/download": return self._serve_document(doc_path, attachment=True)
             if path == "/raw": return self._serve_document(doc_path, attachment=False)
-            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(preview_html(name, doc_path).encode("utf-8")); return
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(preview_html(name, doc_path).encode("utf-8")); return
         if path == "/dashboard":
-            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(dashboard_html().encode("utf-8")); return
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(dashboard_html().encode("utf-8")); return
         if path in ("/scan", "/scan.html"):
             try:
                 scan = inject_pwa(open(os.path.join(_project_root, "scan.html"), "r", encoding="utf-8").read())
-                self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(scan.encode("utf-8"))
+                self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(scan.encode("utf-8"))
             except Exception as e:
                 self.send_response(500); self.end_headers(); self.wfile.write(str(e).encode("utf-8"))
             return
-        self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers(); self.wfile.write(agent_html().encode("utf-8"))
+        self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(agent_html().encode("utf-8"))
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -320,12 +327,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 name = json.loads(raw).get("file", "")
                 doc_path = safe_doc_path(name)
-                if not doc_path or not os.path.isfile(doc_path):
-                    return self._json({"ok": False, "error": "File not found"}, 404)
+                if not doc_path or not os.path.isfile(doc_path): return self._json({"ok": False, "error": "File not found"}, 404)
                 deleted = []
                 for p in [doc_path, doc_path + ".ocr.txt", doc_path + ".json"]:
-                    if os.path.exists(p):
-                        os.remove(p); deleted.append(os.path.basename(p))
+                    if os.path.exists(p): os.remove(p); deleted.append(os.path.basename(p))
                 return self._json({"ok": True, "deleted": deleted})
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
@@ -338,6 +343,12 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             msg = ""
         if not msg: return self._json({"response": "Empty message."})
+        m = re.match(r"^read\s+(.+)$", msg, re.I)
+        if m:
+            return self._json({"response": read_saved_document_for_chat(m.group(1).strip())})
+        if msg.lower() in ("list documents", "documents", "show documents", "what documents"):
+            names = [r["name"] for r in document_rows()]
+            return self._json({"response": "No saved documents yet." if not names else "Saved documents:\n" + "\n".join("- " + n for n in names)})
         global _chat_messages
         try:
             response, _chat_messages = process_turn(msg, _chat_messages)
@@ -347,19 +358,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_save_pdf(self):
         length = int(self.headers.get("Content-Length", 0))
-        if length > 25 * 1024 * 1024:
-            return self._json({"ok": False, "error": "PDF is too large. Try fewer/smaller images."}, 413)
+        if length > 25 * 1024 * 1024: return self._json({"ok": False, "error": "PDF is too large. Try fewer/smaller images."}, 413)
         raw = self.rfile.read(length).decode("utf-8", errors="ignore")
         try:
             data = json.loads(raw) if raw else {}
             filename = safe_filename(data.get("filename") or "scan.pdf")
-            if not filename.lower().endswith(".pdf"):
-                filename += ".pdf"
+            if not filename.lower().endswith(".pdf"): filename += ".pdf"
             pdf_bytes = base64.b64decode(data.get("pdf_base64") or "", validate=True)
         except Exception as e:
             return self._json({"ok": False, "error": f"Invalid PDF upload: {e}"}, 400)
-        if not pdf_bytes.startswith(b"%PDF"):
-            return self._json({"ok": False, "error": "Uploaded file does not look like a PDF."}, 400)
+        if not pdf_bytes.startswith(b"%PDF"): return self._json({"ok": False, "error": "Uploaded file does not look like a PDF."}, 400)
         out_path = os.path.join(DOCUMENTS_DIR, filename)
         base, ext = os.path.splitext(filename); counter = 2
         while os.path.exists(out_path):
@@ -371,8 +379,7 @@ class Handler(BaseHTTPRequestHandler):
         ocr = try_local_ocr(out_path)
         return self._json({"ok": True, "filename": filename, "path": f"data/documents/{filename}", "ask_url": f"/?ask_doc={filename}", "download_url": f"/download?file={quote(filename)}", "preview_url": f"/preview?file={quote(filename)}", "ocr": ocr, "dashboard_url": "/dashboard", "message": f"Saved to data/documents/{filename}"})
 
-    def log_message(self, *_):
-        pass
+    def log_message(self, *_): pass
 
 
 def main():
