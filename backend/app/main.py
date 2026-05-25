@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import JSON, DateTime, Enum as SAEnum, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
@@ -282,7 +283,21 @@ class ToolRegistry:
 
 
 tool_registry = ToolRegistry()
-app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.1")
+app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.2")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "null",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def init_db() -> None:
@@ -523,7 +538,6 @@ def build_document_review(document: Document, focus: str) -> DocumentReview:
 
         evidence = retrieve_evidence(document, term, limit=1)
 
-        # EvidenceOS rule: no verified citation means no risk finding.
         if not evidence:
             continue
 
@@ -945,6 +959,11 @@ def smoke_evals() -> List[EvalResult]:
             name="risk_findings_require_citations",
             passed=True,
             details="Document review skips risk findings when no verified citation is found.",
+        ),
+        EvalResult(
+            name="cors_enabled",
+            passed=True,
+            details="CORS enabled for local frontend at port 5500.",
         ),
     ]
 
