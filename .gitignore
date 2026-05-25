@@ -5,3 +5,10 @@ __pycache__/
 *.log
 first-ai-agent.zip
 .vercel
+
+# Local backend runtime files
+backend/agentops.db
+backend/*.db
+backend/.venv/
+__pycache__/
+*.pyc
