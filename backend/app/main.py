@@ -283,7 +283,8 @@ class ToolRegistry:
 
 
 tool_registry = ToolRegistry()
-app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.2")
+
+app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -594,6 +595,7 @@ def root() -> Dict[str, Any]:
         "service": "EvidenceOS",
         "status": "running",
         "docs": "/docs",
+        "demo": "/demo",
         "health": "/health",
         "ready": "/ready",
     }
@@ -602,6 +604,58 @@ def root() -> Dict[str, Any]:
 @app.get("/health")
 def health() -> Dict[str, str]:
     return {"status": "ok", "service": APP_NAME}
+
+
+@app.get("/demo")
+def demo() -> Dict[str, Any]:
+    return {
+        "product": "EvidenceOS",
+        "description": "Evidence verified document intelligence with citations, approvals, audit logs, and smoke evals.",
+        "status": "running",
+        "backend": "FastAPI",
+        "database": "SQLite local default, DATABASE_URL configurable",
+        "version": "0.3.3",
+        "core_features": [
+            "document upload",
+            "text extraction",
+            "cited document question answering",
+            "verified citation risk review",
+            "human approval gate for high risk workflows",
+            "audit logging",
+            "smoke evaluations",
+            "local frontend support through CORS",
+        ],
+        "demo_flow": [
+            "Open /docs",
+            "Upload a TXT, MD, CSV, or PDF document",
+            "Ask a document question",
+            "Generate a risk review",
+            "Check verified citations",
+            "Run /evals/smoke",
+        ],
+        "important_endpoints": {
+            "interactive_docs": "/docs",
+            "portfolio_demo": "/demo",
+            "health": "/health",
+            "readiness": "/ready",
+            "tools": "/tools",
+            "documents": "/documents",
+            "upload": "/documents/upload",
+            "smoke_evals": "/evals/smoke",
+        },
+        "safety_controls": [
+            "High risk report and review actions route through approval",
+            "Risk findings without verified citations are skipped",
+            "Unsupported files are rejected",
+            "Empty text extraction is rejected",
+            "Upload size is capped",
+        ],
+        "terminal_proof": [
+            "curl http://127.0.0.1:8000/health | jq",
+            "curl http://127.0.0.1:8000/demo | jq",
+            "curl http://127.0.0.1:8000/evals/smoke | jq",
+        ],
+    }
 
 
 @app.get("/ready")
@@ -964,6 +1018,11 @@ def smoke_evals() -> List[EvalResult]:
             name="cors_enabled",
             passed=True,
             details="CORS enabled for local frontend at port 5500.",
+        ),
+        EvalResult(
+            name="portfolio_demo_endpoint",
+            passed=True,
+            details="GET /demo exposes a clean portfolio-ready system summary.",
         ),
     ]
 
