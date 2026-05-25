@@ -1,18 +1,14 @@
-# First AI Agent
+# EvidenceOS
 
-Local Q&A over your documents (PDFs, text). No API keys, runs offline.
+Evidence verified document intelligence with citations, approvals, audit logs, and smoke evals.
 
-## First time? (e.g. you received this from a friend)
+EvidenceOS is a FastAPI based document intelligence system that lets users upload documents, ask questions, generate risk reviews, and inspect cited source evidence. The project is designed around one rule:
 
-1. **Setup** (once):  
-   - **Mac:** Double‑click **`setup.command`**  
-   - **Windows:** Double‑click **`setup.bat`**  
-   - Or in terminal: `python3 -m venv .venv` then `.venv/bin/pip install -r requirements.txt`
+> No evidence, no answer. No verified citation, no risk finding.
 
-2. **Run:**  
-   - **Mac:** Double‑click **`run_web.command`**, then open **http://127.0.0.1:8765** in your browser.  
-   - Or: `./.venv/bin/python run_web.py` (Mac/Linux) or `.venv\Scripts\python run_web.py` (Windows)
+## Why this project exists
 
-3. In the browser: type **help** or **what is bitcoin** to try it.
+Most document AI demos stop at:
 
-See **docs/SHARE_WITH_FRIEND.md** for full “share with a friend” and setup instructions.
+```txt
+Upload PDF → Ask chatbot → Get answer

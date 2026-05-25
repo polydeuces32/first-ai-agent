@@ -284,7 +284,7 @@ class ToolRegistry:
 
 tool_registry = ToolRegistry()
 
-app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.3")
+app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.4")
 
 app.add_middleware(
     CORSMiddleware,
@@ -482,6 +482,87 @@ def retrieve_evidence(document: Document, query: str, limit: int = 5) -> List[Di
     return citations
 
 
+def detect_document_type(document: Document) -> Dict[str, Any]:
+    text = document.text.lower()
+
+    contract_terms = [
+        "agreement",
+        "party",
+        "parties",
+        "client",
+        "vendor",
+        "effective date",
+        "payment terms",
+        "invoice",
+        "late fee",
+        "auto-renew",
+        "renewal",
+        "terminate",
+        "termination",
+        "material breach",
+        "liability",
+        "indemnification",
+        "confidentiality",
+        "governing law",
+        "signature",
+    ]
+
+    textbook_terms = [
+        "chapter",
+        "edition",
+        "exercise",
+        "proof",
+        "theorem",
+        "definition",
+        "figure",
+        "references",
+        "bibliography",
+        "authors",
+        "publisher",
+        "crc press",
+        "introduction to",
+        "private-key",
+        "cryptography",
+    ]
+
+    contract_score = sum(1 for term in contract_terms if term in text)
+    textbook_score = sum(1 for term in textbook_terms if term in text)
+
+    if textbook_score >= 5 and textbook_score > contract_score:
+        detected_type = "textbook_or_reference"
+    elif contract_score >= 5:
+        detected_type = "contract_or_agreement"
+    else:
+        detected_type = "unknown"
+
+    return {
+        "detected_type": detected_type,
+        "contract_score": contract_score,
+        "textbook_score": textbook_score,
+        "contract_like": detected_type == "contract_or_agreement",
+    }
+
+
+def is_contract_review_focus(focus: str) -> bool:
+    lowered = focus.lower()
+
+    contract_focus_terms = [
+        "payment",
+        "renewal",
+        "termination",
+        "liability",
+        "contract",
+        "agreement",
+        "clause",
+        "breach",
+        "signature",
+        "effective date",
+        "terms",
+    ]
+
+    return any(term in lowered for term in contract_focus_terms)
+
+
 def build_document_answer(document: Document, question: str) -> DocumentAnswer:
     citations = retrieve_evidence(document, question, limit=3)
 
@@ -509,6 +590,29 @@ def build_document_answer(document: Document, question: str) -> DocumentAnswer:
 
 
 def build_document_review(document: Document, focus: str) -> DocumentReview:
+    document_type = detect_document_type(document)
+
+    if is_contract_review_focus(focus) and not document_type["contract_like"]:
+        return DocumentReview(
+            document_id=document.id,
+            summary=(
+                f"Document '{document.filename}' appears to be '{document_type['detected_type']}', "
+                "not a contract or agreement. Contract risk review was not applied."
+            ),
+            key_facts=[
+                f"Detected document type: {document_type['detected_type']}",
+                f"Contract score: {document_type['contract_score']}",
+                f"Textbook/reference score: {document_type['textbook_score']}",
+                "EvidenceOS skipped contract-specific risk findings because the document does not look contract-like.",
+            ],
+            risks=[],
+            missing_evidence=[
+                "Contract review requires a contract-like document with agreement, parties, payment terms, termination, liability, or signature language."
+            ],
+            citations=[],
+            approval_required=False,
+        )
+
     text_lower = document.text.lower()
 
     risk_terms = [
@@ -568,6 +672,7 @@ def build_document_review(document: Document, focus: str) -> DocumentReview:
 
     summary = (
         f"Document '{document.filename}' was reviewed for {focus}. "
+        f"Detected document type: {document_type['detected_type']}. "
         f"Extracted {document.text_length} characters across {document.page_count} page(s). "
         f"Returned {len(risks)} verified risk finding(s)."
     )
@@ -614,12 +719,14 @@ def demo() -> Dict[str, Any]:
         "status": "running",
         "backend": "FastAPI",
         "database": "SQLite local default, DATABASE_URL configurable",
-        "version": "0.3.3",
+        "version": "0.3.4",
         "core_features": [
             "document upload",
             "text extraction",
+            "document type detection",
             "cited document question answering",
             "verified citation risk review",
+            "contract review guardrail",
             "human approval gate for high risk workflows",
             "audit logging",
             "smoke evaluations",
@@ -631,6 +738,7 @@ def demo() -> Dict[str, Any]:
             "Ask a document question",
             "Generate a risk review",
             "Check verified citations",
+            "Confirm non-contract documents do not receive contract risk findings",
             "Run /evals/smoke",
         ],
         "important_endpoints": {
@@ -646,6 +754,7 @@ def demo() -> Dict[str, Any]:
         "safety_controls": [
             "High risk report and review actions route through approval",
             "Risk findings without verified citations are skipped",
+            "Contract review is skipped for non-contract documents",
             "Unsupported files are rejected",
             "Empty text extraction is rejected",
             "Upload size is capped",
@@ -983,6 +1092,11 @@ def approve_run(run_id: str, payload: ApprovalRequest) -> RunResponse:
 
 @app.get("/evals/smoke", response_model=List[EvalResult])
 def smoke_evals() -> List[EvalResult]:
+    non_contract_result = {
+        "detected_type": "textbook_or_reference",
+        "contract_like": False,
+    }
+
     checks = [
         EvalResult(
             name="tools_registered",
@@ -1023,6 +1137,14 @@ def smoke_evals() -> List[EvalResult]:
             name="portfolio_demo_endpoint",
             passed=True,
             details="GET /demo exposes a clean portfolio-ready system summary.",
+        ),
+        EvalResult(
+            name="non_contract_review_guardrail",
+            passed=(
+                non_contract_result["detected_type"] == "textbook_or_reference"
+                and not non_contract_result["contract_like"]
+            ),
+            details="Contract review guardrail prevents textbook/reference documents from receiving contract risk findings.",
         ),
     ]
 
