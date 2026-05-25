@@ -12,3 +12,7 @@ backend/*.db
 backend/.venv/
 __pycache__/
 *.pyc
+
+# Local uploads and test files
+backend/storage/
+sample_document.txt
