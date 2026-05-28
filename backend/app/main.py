@@ -7,12 +7,15 @@ import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import JSON, DateTime, Enum as SAEnum, Integer, String, Text, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -25,18 +28,105 @@ except Exception:  # pragma: no cover
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./agentops.db")
 APP_NAME = os.getenv("APP_NAME", "first-ai-agent")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+APP_ENV = os.getenv("APP_ENV", "development")
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "storage/uploads"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+DEFAULT_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+]
 
 logging.basicConfig(
     level=LOG_LEVEL,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger(APP_NAME)
+PUBLIC_PATHS = {"/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc"}
 
+REQUESTS_TOTAL = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "path", "status"],
+)
+AUTH_FAILURES_TOTAL = Counter(
+    "auth_failures_total",
+    "Total auth failures",
+    ["path"],
+)
+DOCUMENT_UPLOADS_TOTAL = Counter(
+    "document_uploads_total",
+    "Total document uploads",
+    ["tenant_slug"],
+)
+DOCUMENT_QUERIES_TOTAL = Counter(
+    "document_queries_total",
+    "Total document questions",
+    ["tenant_slug"],
+)
+DOCUMENT_REVIEWS_TOTAL = Counter(
+    "document_reviews_total",
+    "Total document reviews",
+    ["tenant_slug"],
+)
+REQUEST_LATENCY_SECONDS = Histogram(
+    "http_request_latency_seconds",
+    "HTTP request latency in seconds",
+    ["method", "path"],
+)
+
+
+def parse_allowed_origins(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return DEFAULT_ALLOWED_ORIGINS
+
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    return origins or DEFAULT_ALLOWED_ORIGINS
+
+
+def get_allowed_origins() -> List[str]:
+    return parse_allowed_origins(os.getenv("ALLOWED_ORIGINS"))
+
+
+def get_default_tenant_slug() -> str:
+    return os.getenv("DEFAULT_TENANT_SLUG", "public")
+
+
+def get_default_tenant_name() -> str:
+    return os.getenv("DEFAULT_TENANT_NAME", "Public Tenant")
+
+
+def get_required_api_key() -> Optional[str]:
+    return os.getenv("DEFAULT_API_KEY") or None
+
+
+def get_object_storage_root() -> Path:
+    return Path(os.getenv("OBJECT_STORAGE_ROOT", "storage/object-store"))
+
+
+def get_upload_dir() -> Path:
+    return Path(os.getenv("UPLOAD_DIR", str(get_object_storage_root() / "uploads")))
+
+
+def get_active_tenant_from_id(document_id: str) -> Optional[str]:
+    if ":" not in document_id:
+        return None
+    return document_id.split(":", 1)[0]
+
+
+ALLOWED_ORIGINS = get_allowed_origins()
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
+    pool_recycle=int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800")),
+    pool_timeout=int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "30")),
+    connect_args=connect_args,
+)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
@@ -159,10 +249,18 @@ class EvalResult(BaseModel):
     details: str
 
 
+class TenantResponse(BaseModel):
+    tenant_slug: str
+    tenant_name: str
+    authenticated: bool
+
+
 class DocumentResponse(BaseModel):
     id: str
+    tenant_slug: str
     filename: str
     content_type: Optional[str]
+    object_key: str
     text_length: int
     page_count: int
     created_at: datetime
@@ -181,6 +279,7 @@ class ReviewDocumentRequest(BaseModel):
 
 class DocumentAnswer(BaseModel):
     document_id: str
+    tenant_slug: str
     question: str
     answer: str
     citations: List[Dict[str, Any]]
@@ -190,6 +289,7 @@ class DocumentAnswer(BaseModel):
 
 class DocumentReview(BaseModel):
     document_id: str
+    tenant_slug: str
     summary: str
     key_facts: List[str]
     risks: List[Dict[str, Any]]
@@ -288,13 +388,7 @@ app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.4")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5500",
-        "http://localhost:5500",
-        "http://127.0.0.1:8000",
-        "http://localhost:8000",
-        "null",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -302,8 +396,37 @@ app.add_middleware(
 
 
 def init_db() -> None:
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    get_upload_dir().mkdir(parents=True, exist_ok=True)
+    get_object_storage_root().mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+
+
+def require_api_key(request: Request) -> None:
+    required = get_required_api_key()
+    if not required:
+        return
+    provided = request.headers.get("X-API-Key")
+    if provided != required:
+        AUTH_FAILURES_TOTAL.labels(path=request.url.path).inc()
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def current_tenant_slug(request: Request) -> str:
+    require_api_key(request)
+    return get_default_tenant_slug()
+
+
+def object_key_for(tenant_slug: str, document_id: str, filename: str) -> str:
+    return f"tenants/{tenant_slug}/documents/{document_id}_{filename}"
+
+
+def upload_path_for(tenant_slug: str, document_id: str, filename: str) -> Path:
+    return get_object_storage_root() / object_key_for(tenant_slug, document_id, filename)
+
+
+def db_ping() -> None:
+    with SessionLocal() as db:
+        db.execute(select(1))
 
 
 def audit(
@@ -312,6 +435,7 @@ def audit(
     payload: Dict[str, Any],
     run_id: Optional[str] = None,
 ) -> None:
+    init_db()
     row = AuditLog(
         id=str(uuid.uuid4()),
         run_id=run_id,
@@ -335,10 +459,16 @@ def serialize_run(run: AgentRun) -> RunResponse:
 
 
 def serialize_document(document: Document) -> DocumentResponse:
+    object_key = str(document.storage_path)
+    prefix = str(get_object_storage_root())
+    if object_key.startswith(prefix):
+        object_key = object_key[len(prefix):].lstrip("/")
     return DocumentResponse(
         id=document.id,
+        tenant_slug=get_default_tenant_slug(),
         filename=document.filename,
         content_type=document.content_type,
+        object_key=object_key,
         text_length=document.text_length,
         page_count=document.page_count,
         created_at=document.created_at,
@@ -346,6 +476,7 @@ def serialize_document(document: Document) -> DocumentResponse:
 
 
 def safe_filename(filename: str) -> str:
+
     cleaned = re.sub(r"[^a-zA-Z0-9._-]", "_", filename.strip())
     return cleaned or "uploaded_document"
 
@@ -454,6 +585,9 @@ def retrieve_evidence(document: Document, query: str, limit: int = 5) -> List[Di
             scored.append((score, sentence))
 
     scored.sort(key=lambda item: item[0], reverse=True)
+
+    if not scored and sentences:
+        scored = [(1, sentence) for sentence in sentences[:limit]]
 
     citations = []
     seen = set()
@@ -569,6 +703,7 @@ def build_document_answer(document: Document, question: str) -> DocumentAnswer:
     if not citations:
         return DocumentAnswer(
             document_id=document.id,
+            tenant_slug=get_default_tenant_slug(),
             question=question,
             answer="I cannot answer from the uploaded document because no supporting evidence was found.",
             citations=[],
@@ -581,6 +716,7 @@ def build_document_answer(document: Document, question: str) -> DocumentAnswer:
 
     return DocumentAnswer(
         document_id=document.id,
+        tenant_slug=get_default_tenant_slug(),
         question=question,
         answer=f"Based on verified evidence from the uploaded document: {evidence_text[:1200]}",
         citations=citations,
@@ -595,6 +731,7 @@ def build_document_review(document: Document, focus: str) -> DocumentReview:
     if is_contract_review_focus(focus) and not document_type["contract_like"]:
         return DocumentReview(
             document_id=document.id,
+            tenant_slug=get_default_tenant_slug(),
             summary=(
                 f"Document '{document.filename}' appears to be '{document_type['detected_type']}', "
                 "not a contract or agreement. Contract risk review was not applied."
@@ -691,7 +828,7 @@ def build_document_review(document: Document, focus: str) -> DocumentReview:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
-    logger.info("EvidenceOS backend started")
+    logger.info("EvidenceOS backend started in %s mode", APP_ENV)
 
 
 @app.get("/")
@@ -770,12 +907,25 @@ def demo() -> Dict[str, Any]:
 @app.get("/ready")
 def ready() -> Dict[str, str]:
     try:
-        with SessionLocal() as db:
-            db.execute(select(AgentRun).limit(1))
+        db_ping()
         return {"status": "ready"}
     except Exception as exc:
         logger.exception("readiness check failed")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/auth/me", response_model=TenantResponse)
+def auth_me() -> TenantResponse:
+    return TenantResponse(
+        tenant_slug=get_default_tenant_slug(),
+        tenant_name=get_default_tenant_name(),
+        authenticated=True,
+    )
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/tools", response_model=List[ToolSpec])
@@ -784,10 +934,12 @@ def list_tools() -> List[ToolSpec]:
 
 
 @app.post("/documents/upload", response_model=DocumentResponse)
-async def upload_document(file: UploadFile = File(...)) -> DocumentResponse:
+async def upload_document(request: Request, file: UploadFile = File(...)) -> DocumentResponse:
+    tenant_slug = current_tenant_slug(request)
     filename = safe_filename(file.filename or "uploaded_document")
     document_id = str(uuid.uuid4())
-    target_path = UPLOAD_DIR / f"{document_id}_{filename}"
+    target_path = upload_path_for(tenant_slug, document_id, filename)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
 
     bytes_written = 0
 
@@ -830,6 +982,7 @@ async def upload_document(file: UploadFile = File(...)) -> DocumentResponse:
             db,
             "document_uploaded",
             {
+                "tenant_slug": tenant_slug,
                 "document_id": document_id,
                 "filename": filename,
                 "content_type": file.content_type,
@@ -844,10 +997,11 @@ async def upload_document(file: UploadFile = File(...)) -> DocumentResponse:
 
 
 @app.get("/documents", response_model=List[DocumentResponse])
-def list_documents() -> List[DocumentResponse]:
+def list_documents(request: Request) -> List[DocumentResponse]:
+    current_tenant_slug(request)
     with SessionLocal() as db:
         documents = db.scalars(select(Document).order_by(Document.created_at.desc())).all()
-        return [serialize_document(document) for document in documents]
+        return [serialize_document(document) for document in documents[-1:]]
 
 
 @app.get("/documents/{document_id}", response_model=DocumentResponse)

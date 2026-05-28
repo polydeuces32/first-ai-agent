@@ -1,0 +1,17 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.pytest_cache/
+.mypy_cache/
+.venv/
+backend/.venv/
+backend/agentops.db
+backend/storage/
+sample_document.txt
+*.log
+*.zip

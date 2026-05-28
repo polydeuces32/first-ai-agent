@@ -16,3 +16,9 @@ __pycache__/
 # Local uploads and test files
 backend/storage/
 sample_document.txt
+
+# Local runtime data
+agentops.db
+storage/
+__pycache__/
+.pytest_cache/
