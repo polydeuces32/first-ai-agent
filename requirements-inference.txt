@@ -1,0 +1,4 @@
+# Optional richer embeddings (install in backend venv):
+#   pip install -r ../requirements-inference.txt
+sentence-transformers>=3.0.0
+numpy>=1.26.0

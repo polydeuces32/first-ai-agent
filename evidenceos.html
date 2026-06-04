@@ -3,224 +3,323 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EvidenceOS | Document Intelligence</title>
+  <title>EvidenceOS</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Arial, sans-serif;
-      background: #0b0f17;
-      color: #e8eefc;
+      background: #0a0a0a;
+      color: #b8f0b0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.45;
+      transition: color 0.2s, background 0.2s;
     }
-
-    main {
-      max-width: 1100px;
+    body.npu-active {
+      background: #050810;
+      color: #b8e8ff;
+    }
+    body.npu-active .dim { color: #5a8aaa; }
+    body.npu-active .out { color: #d8f0ff; }
+    body.npu-active .npu-banner { color: #9ee0ff; }
+    body.npu-active #prompt-label { color: #7ec8ff; }
+    body.npu-active #cmd {
+      color: #b8e8ff;
+      border-color: #3a5a7a;
+    }
+    body.npu-active #form { border-top-color: #2a4a6a; }
+    #screen {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      max-width: 900px;
       margin: 0 auto;
-      padding: 40px 20px;
-    }
-
-    h1 {
-      margin-bottom: 8px;
-      font-size: 42px;
-    }
-
-    p {
-      color: #aab6cc;
-      line-height: 1.5;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-top: 28px;
-    }
-
-    .card {
-      background: #121826;
-      border: 1px solid #263247;
-      border-radius: 14px;
-      padding: 20px;
-    }
-
-    input, textarea, button {
-      width: 100%;
-      box-sizing: border-box;
-      margin-top: 10px;
-      border-radius: 10px;
-      border: 1px solid #33415c;
       padding: 12px;
-      font-size: 15px;
     }
-
-    input, textarea {
-      background: #0b0f17;
-      color: #e8eefc;
-    }
-
-    button {
-      background: #4f8cff;
-      color: white;
-      border: none;
-      cursor: pointer;
-      font-weight: bold;
-    }
-
-    button:hover {
-      opacity: 0.9;
-    }
-
-    pre {
+    #log {
+      flex: 1;
+      overflow-y: auto;
       white-space: pre-wrap;
-      background: #080b11;
-      border: 1px solid #263247;
-      padding: 14px;
-      border-radius: 10px;
-      overflow-x: auto;
-      color: #cfe0ff;
-      min-height: 120px;
+      word-break: break-word;
+      padding: 8px 0;
     }
-
-    .full {
-      grid-column: 1 / -1;
+    .dim { color: #6a8f6a; }
+    .err { color: #f08080; }
+    .out { color: #d8e8d0; }
+    .npu-banner { color: #8bd49c; font-weight: bold; }
+    #form {
+      display: flex;
+      gap: 8px;
+      border-top: 1px solid #2a3a2a;
+      padding-top: 10px;
     }
-
-    .status {
-      margin-top: 16px;
+    #prompt-label {
       color: #8bd49c;
-      font-weight: bold;
+      flex-shrink: 0;
+      padding-top: 6px;
     }
-
-    @media (max-width: 800px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
+    #cmd {
+      flex: 1;
+      background: transparent;
+      border: 1px solid #2a3a2a;
+      color: inherit;
+      font: inherit;
+      padding: 6px 8px;
+      border-radius: 2px;
+      outline: none;
     }
+    #cmd:focus { border-color: #4a7a4a; }
+    body.npu-active #cmd:focus { border-color: #5a9ac8; }
+    #fileInput { display: none; }
   </style>
 </head>
 <body>
-  <main>
-    <h1>EvidenceOS</h1>
-    <p>
-      Evidence verified document intelligence. Upload a document, ask questions,
-      generate a risk review, and inspect cited source evidence.
-    </p>
-
-    <div class="status" id="status">Backend: checking...</div>
-
-    <div class="grid">
-      <section class="card">
-        <h2>1. Upload Document</h2>
-        <input id="fileInput" type="file" />
-        <button onclick="uploadDocument()">Upload</button>
-        <p>Current Document ID:</p>
-        <pre id="documentId">None</pre>
-      </section>
-
-      <section class="card">
-        <h2>2. Ask Question</h2>
-        <textarea id="questionInput" rows="5">What are the payment and renewal risks?</textarea>
-        <button onclick="askDocument()">Ask</button>
-      </section>
-
-      <section class="card">
-        <h2>3. Review Document</h2>
-        <textarea id="focusInput" rows="5">payment terms, renewal, termination, liability, and missing evidence</textarea>
-        <button onclick="reviewDocument()">Generate Review</button>
-      </section>
-
-      <section class="card">
-        <h2>4. Smoke Evals</h2>
-        <button onclick="runSmokeEvals()">Run Smoke Evals</button>
-      </section>
-
-      <section class="card full">
-        <h2>Output</h2>
-        <pre id="output">Waiting...</pre>
-      </section>
-    </div>
-  </main>
+  <div id="screen">
+    <div id="log"></div>
+    <form id="form" autocomplete="off">
+      <span id="prompt-label">evidenceos&gt;</span>
+      <input id="cmd" type="text" spellcheck="false" autofocus placeholder="help" />
+    </form>
+    <input id="fileInput" type="file" accept=".pdf,.txt,.md,.csv,text/*,application/pdf" />
+  </div>
 
   <script>
     const API_BASE = "http://127.0.0.1:8000";
-    let currentDocumentId = null;
+    const URL_PREVIEW_NPU = new URLSearchParams(location.search).get("preview") === "npu";
+    const logEl = document.getElementById("log");
+    const cmdEl = document.getElementById("cmd");
+    const fileInput = document.getElementById("fileInput");
+    let docId = localStorage.getItem("evidenceos_doc_id") || null;
+    let pendingUpload = false;
+    let npuPreview = URL_PREVIEW_NPU;
 
-    function show(data) {
-      document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+    function setNpuTheme(active) {
+      document.body.classList.toggle("npu-active", active);
+      document.title = active ? "EvidenceOS · Neural Engine" : "EvidenceOS";
     }
 
-    async function checkHealth() {
-      try {
-        const res = await fetch(`${API_BASE}/health`);
-        const data = await res.json();
-        document.getElementById("status").textContent = `Backend: ${data.status}`;
-      } catch (err) {
-        document.getElementById("status").textContent = "Backend: offline";
-      }
+    function line(text, cls = "") {
+      const div = document.createElement("div");
+      if (cls) div.className = cls;
+      div.textContent = text;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
     }
 
-    async function uploadDocument() {
-      const file = document.getElementById("fileInput").files[0];
-      if (!file) {
-        show({ error: "Choose a file first." });
-        return;
-      }
+    function printHelp() {
+      line("Commands:", "dim");
+      line("  help              show this message", "dim");
+      line("  health            backend + index status", "dim");
+      line("  health npu        preview Neural Engine UI (demo)", "dim");
+      line("  health cpu        back to live status", "dim");
+      line("  upload            pick a file (pdf, txt, md, csv)", "dim");
+      line("  use <doc-id>      set active document", "dim");
+      line("  ask <question>    cited answer", "dim");
+      line("  review [focus]    risk review", "dim");
+      line("  smoke             run eval checks", "dim");
+      line("  clear             clear screen", "dim");
+      line("Open with ?preview=npu in the URL for NPU demo on load.", "dim");
+      if (docId) line(`Active document: ${docId}`, "dim");
+    }
 
+    async function api(path, options = {}) {
+      const res = await fetch(`${API_BASE}${path}`, options);
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
+      return data;
+    }
+
+    function formatHealth(inf, backendStatus) {
+      const n = inf.neural_engine || {};
+      const lines = [];
+      if (inf.preview) {
+        lines.push("PREVIEW — simulated NPU / Neural Engine system");
+        lines.push("");
+      }
+      if (n.active) {
+        lines.push("━━━ Apple Neural Engine ━━━  ACTIVE");
+        lines.push("");
+      } else if (n.hardware_available) {
+        lines.push("━━━ Apple Silicon ━━━  CPU index (NPU not active)");
+        lines.push("");
+      }
+      lines.push(`backend: ${backendStatus}`);
+      lines.push(`label: ${inf.user_facing_label}`);
+      lines.push(`device: ${inf.device_label}`);
+      lines.push(`index backend: ${inf.active_backend}`);
+      lines.push(`model: ${inf.model_id}`);
+      if (n.message) lines.push(`note: ${n.message}`);
+      return lines.join("\n");
+    }
+
+    function formatAnswer(data) {
+      const lines = [];
+      lines.push(`mode: ${data.retrieval_mode || "?"}`);
+      lines.push(`confidence: ${data.confidence}%  abstained: ${data.abstained}`);
+      lines.push("");
+      lines.push(data.answer || "");
+      if (data.citations && data.citations.length) {
+        lines.push("");
+        lines.push("citations:");
+        data.citations.forEach((c, i) => {
+          lines.push(`  [${i + 1}] score=${c.score} ${c.retrieval || ""} ${(c.source_text || "").slice(0, 200)}`);
+        });
+      }
+      return lines.join("\n");
+    }
+
+    function formatReview(data) {
+      const lines = [];
+      lines.push(data.summary || "");
+      if (data.risks && data.risks.length) {
+        lines.push("");
+        lines.push("risks:");
+        data.risks.forEach((r, i) => lines.push(`  [${i + 1}] ${r.risk}`));
+      }
+      if (data.missing_evidence && data.missing_evidence.length) {
+        lines.push("");
+        lines.push("missing:");
+        data.missing_evidence.forEach((m) => lines.push(`  - ${m}`));
+      }
+      return lines.join("\n");
+    }
+
+    function formatUpload(data) {
+      const lines = [
+        `uploaded: ${data.filename}`,
+        `doc: ${data.id}`,
+      ];
+      if (npuPreview) {
+        lines.push(`index: ready  chunks: ${data.chunk_count}  device: Apple Neural Engine (Core ML)`);
+        lines.push("(upload is real; index line shown as NPU preview)");
+      } else {
+        lines.push(`index: ${data.index_status}  chunks: ${data.chunk_count}`);
+        if (data.index_device) lines.push(`device: ${data.index_device}`);
+      }
+      return lines.join("\n");
+    }
+
+    async function runHealth(forcePreview) {
+      if (forcePreview === true) npuPreview = true;
+      if (forcePreview === false) npuPreview = false;
+
+      const path = npuPreview ? "/inference/health?preview=npu" : "/inference/health";
+      const h = await api("/health");
+      const inf = await api(path);
+      const neuralActive = inf.neural_engine && inf.neural_engine.active;
+      setNpuTheme(!!neuralActive);
+      if (neuralActive) {
+        line("EvidenceOS · Neural Engine indexing enabled", "npu-banner");
+      }
+      line(formatHealth(inf, h.status), "out");
+    }
+
+    async function runUpload(file) {
       const form = new FormData();
       form.append("file", file);
-
-      const res = await fetch(`${API_BASE}/documents/upload`, {
-        method: "POST",
-        body: form
-      });
-
-      const data = await res.json();
-      if (data.id) {
-        currentDocumentId = data.id;
-        document.getElementById("documentId").textContent = data.id;
-      }
-      show(data);
+      const data = await api("/documents/upload", { method: "POST", body: form });
+      docId = data.id;
+      localStorage.setItem("evidenceos_doc_id", docId);
+      line(formatUpload(data), "out");
     }
 
-    async function askDocument() {
-      if (!currentDocumentId) {
-        show({ error: "Upload a document first." });
-        return;
-      }
-
-      const question = document.getElementById("questionInput").value;
-
-      const res = await fetch(`${API_BASE}/documents/${currentDocumentId}/ask`, {
+    async function runAsk(question) {
+      if (!docId) throw new Error("no document — run upload first");
+      const data = await api(`/documents/${docId}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question })
+        body: JSON.stringify({ question }),
       });
-
-      show(await res.json());
+      if (npuPreview && data.retrieval_mode) {
+        line(`mode: hybrid (semantic via Neural Engine — preview label)`, "dim");
+      }
+      line(formatAnswer(data), "out");
     }
 
-    async function reviewDocument() {
-      if (!currentDocumentId) {
-        show({ error: "Upload a document first." });
-        return;
-      }
-
-      const focus = document.getElementById("focusInput").value;
-
-      const res = await fetch(`${API_BASE}/documents/${currentDocumentId}/review`, {
+    async function runReview(focus) {
+      if (!docId) throw new Error("no document — run upload first");
+      const data = await api(`/documents/${docId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ focus })
+        body: JSON.stringify({
+          focus: focus || "risks, gaps, key facts, and missing evidence",
+        }),
       });
-
-      show(await res.json());
+      line(formatReview(data), "out");
     }
 
-    async function runSmokeEvals() {
-      const res = await fetch(`${API_BASE}/evals/smoke`);
-      show(await res.json());
+    async function runSmoke() {
+      const data = await api("/evals/smoke");
+      data.forEach((item) => {
+        line(`${item.passed ? "ok" : "FAIL"}  ${item.name}`, item.passed ? "out" : "err");
+      });
     }
 
-    checkHealth();
+    async function handleCommand(raw) {
+      const input = raw.trim();
+      if (!input) return;
+      line(`evidenceos> ${input}`, "dim");
+
+      const parts = input.split(/\s+/);
+      const cmd = parts[0].toLowerCase();
+      const rest = input.slice(parts[0].length).trim();
+
+      try {
+        if (cmd === "help" || cmd === "?") printHelp();
+        else if (cmd === "clear") logEl.innerHTML = "";
+        else if (cmd === "health") {
+          if (rest === "npu") await runHealth(true);
+          else if (rest === "cpu") await runHealth(false);
+          else await runHealth();
+        }
+        else if (cmd === "upload") {
+          pendingUpload = true;
+          fileInput.click();
+        }
+        else if (cmd === "use") {
+          if (!rest) throw new Error("usage: use <document-id>");
+          docId = rest.split(/\s+/)[0];
+          localStorage.setItem("evidenceos_doc_id", docId);
+          line(`active doc: ${docId}`, "out");
+        }
+        else if (cmd === "ask") {
+          if (!rest) throw new Error("usage: ask <question>");
+          await runAsk(rest);
+        }
+        else if (cmd === "review") await runReview(rest);
+        else if (cmd === "smoke") await runSmoke();
+        else throw new Error(`unknown command: ${cmd}  (type help)`);
+      } catch (err) {
+        line(String(err.message || err), "err");
+      }
+    }
+
+    fileInput.addEventListener("change", async () => {
+      if (!pendingUpload || !fileInput.files[0]) return;
+      pendingUpload = false;
+      try {
+        await runUpload(fileInput.files[0]);
+      } catch (err) {
+        line(String(err.message || err), "err");
+      }
+      fileInput.value = "";
+    });
+
+    document.getElementById("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const value = cmdEl.value;
+      cmdEl.value = "";
+      handleCommand(value);
+    });
+
+    line("EvidenceOS — type help", "dim");
+    line(`api: ${API_BASE}`, "dim");
+    if (URL_PREVIEW_NPU) line("URL preview=npu — Neural Engine demo mode", "dim");
+    if (docId) line(`restored doc: ${docId}`, "dim");
+    runHealth(URL_PREVIEW_NPU ? true : undefined).catch((err) => line(`offline: ${err.message}`, "err"));
+    printHelp();
   </script>
 </body>
 </html>

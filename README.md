@@ -44,10 +44,14 @@ cd ~/first-ai-agent/backend
 ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Then open:
+Then use the CLI-style UI or terminal client:
 
 ```txt
-http://127.0.0.1:8000
+# Browser: open evidenceos.html (green terminal, type: help)
+# Terminal:
+cd ~/first-ai-agent/backend
+./evidenceos_cli.py repl
+# or double-click evidenceos.command from repo root
 ```
 
 ## Smoke checks
@@ -121,6 +125,30 @@ Copy `.env.example` to `.env` and adjust as needed.
 - unsupported file types are rejected
 - uploads are size-limited
 - the app does not expose arbitrary shell execution
+
+## Semantic index (NPU-ready)
+
+EvidenceOS builds a **local semantic index** on every upload so `/ask` can use hybrid citations (semantic + keyword).
+
+**Check status (no auth required):**
+
+```bash
+curl http://127.0.0.1:8000/inference/health
+```
+
+**User flow:** upload → wait for `index_status: ready` in the response → ask questions. Open `evidenceos.html` in a browser (or Live Server on port 5500) to see accelerator status.
+
+**Backends** (`INFERENCE_BACKEND` in `.env`):
+
+| Value | Meaning |
+|-------|---------|
+| `auto` | hash, or sentence-transformers if installed, Core ML when bundle exists |
+| `hash` | lightweight CPU index (default in CI, no downloads) |
+| `sentence` | better embeddings via `pip install -r requirements-inference.txt` |
+| `coreml` | Apple Neural Engine path (requires Core ML embed bundle; falls back until added) |
+| `none` | disable semantic index |
+
+Reindex: `POST /documents/{document_id}/reindex`
 
 ## What to improve next
 

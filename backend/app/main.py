@@ -43,7 +43,16 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger(APP_NAME)
-PUBLIC_PATHS = {"/health", "/ready", "/metrics", "/docs", "/openapi.json", "/redoc"}
+PUBLIC_PATHS = {
+    "/health",
+    "/ready",
+    "/metrics",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/inference/health",
+    "/demo",
+}
 
 REQUESTS_TOTAL = Counter(
     "http_requests_total",
@@ -215,6 +224,34 @@ class Document(Base):
     )
 
 
+class DocumentIndex(Base):
+    __tablename__ = "document_indexes"
+
+    document_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    backend: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    device_label: Mapped[str] = mapped_column(String(120), nullable=False, default="pending")
+    model_id: Mapped[str] = mapped_column(String(120), nullable=False, default="pending")
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    document_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embedding_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class RunCreate(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
     dry_run: bool = True
@@ -264,6 +301,10 @@ class DocumentResponse(BaseModel):
     text_length: int
     page_count: int
     created_at: datetime
+    index_status: str = "pending"
+    chunk_count: int = 0
+    index_device: Optional[str] = None
+    semantic_search_ready: bool = False
 
 
 class AskDocumentRequest(BaseModel):
@@ -285,6 +326,7 @@ class DocumentAnswer(BaseModel):
     citations: List[Dict[str, Any]]
     confidence: int
     abstained: bool
+    retrieval_mode: str = "keyword"
 
 
 class DocumentReview(BaseModel):
@@ -384,7 +426,7 @@ class ToolRegistry:
 
 tool_registry = ToolRegistry()
 
-app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.4")
+app = FastAPI(title="EvidenceOS AgentOps Backend", version="0.3.5")
 
 app.add_middleware(
     CORSMiddleware,
@@ -458,11 +500,19 @@ def serialize_run(run: AgentRun) -> RunResponse:
     )
 
 
-def serialize_document(document: Document) -> DocumentResponse:
+def serialize_document(
+    document: Document,
+    index_row: Optional[DocumentIndex] = None,
+) -> DocumentResponse:
     object_key = str(document.storage_path)
     prefix = str(get_object_storage_root())
     if object_key.startswith(prefix):
         object_key = object_key[len(prefix):].lstrip("/")
+
+    index_status = index_row.status if index_row else "pending"
+    chunk_count = index_row.chunk_count if index_row else 0
+    index_device = index_row.device_label if index_row else None
+
     return DocumentResponse(
         id=document.id,
         tenant_slug=get_default_tenant_slug(),
@@ -472,6 +522,10 @@ def serialize_document(document: Document) -> DocumentResponse:
         text_length=document.text_length,
         page_count=document.page_count,
         created_at=document.created_at,
+        index_status=index_status,
+        chunk_count=chunk_count,
+        index_device=index_device,
+        semantic_search_ready=index_status == "ready",
     )
 
 
@@ -575,7 +629,7 @@ def infer_page(sentence: str) -> Optional[int]:
     return int(page_match.group(1)) if page_match else None
 
 
-def retrieve_evidence(document: Document, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+def retrieve_keyword_evidence(document: Document, query: str, limit: int = 5) -> List[Dict[str, Any]]:
     sentences = split_sentences(document.text)
     scored: List[tuple[int, str]] = []
 
@@ -607,6 +661,7 @@ def retrieve_evidence(document: Document, query: str, limit: int = 5) -> List[Di
                 "source_text": sentence[:800],
                 "score": score,
                 "verified": True,
+                "retrieval": "keyword",
             }
         )
 
@@ -614,6 +669,35 @@ def retrieve_evidence(document: Document, query: str, limit: int = 5) -> List[Di
             break
 
     return citations
+
+
+def retrieve_evidence(
+    db: Session,
+    document: Document,
+    query: str,
+    limit: int = 5,
+) -> tuple[List[Dict[str, Any]], str]:
+    from app.inference.indexer import semantic_citations
+
+    keyword_hits = retrieve_keyword_evidence(document, query, limit=limit)
+    semantic_hits = semantic_citations(db, document, query, limit=limit)
+
+    if not semantic_hits:
+        return keyword_hits[:limit], "keyword"
+
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for citation in semantic_hits + keyword_hits:
+        key = normalize_text(citation["source_text"]).lower()[:200]
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(citation)
+        if len(merged) >= limit:
+            break
+
+    return merged, "hybrid"
 
 
 def detect_document_type(document: Document) -> Dict[str, Any]:
@@ -697,8 +781,8 @@ def is_contract_review_focus(focus: str) -> bool:
     return any(term in lowered for term in contract_focus_terms)
 
 
-def build_document_answer(document: Document, question: str) -> DocumentAnswer:
-    citations = retrieve_evidence(document, question, limit=3)
+def build_document_answer(db: Session, document: Document, question: str) -> DocumentAnswer:
+    citations, retrieval_mode = retrieve_evidence(db, document, question, limit=3)
 
     if not citations:
         return DocumentAnswer(
@@ -709,6 +793,7 @@ def build_document_answer(document: Document, question: str) -> DocumentAnswer:
             citations=[],
             confidence=0,
             abstained=True,
+            retrieval_mode=retrieval_mode,
         )
 
     evidence_text = " ".join(item["source_text"] for item in citations)
@@ -722,10 +807,11 @@ def build_document_answer(document: Document, question: str) -> DocumentAnswer:
         citations=citations,
         confidence=confidence,
         abstained=False,
+        retrieval_mode=retrieval_mode,
     )
 
 
-def build_document_review(document: Document, focus: str) -> DocumentReview:
+def build_document_review(db: Session, document: Document, focus: str) -> DocumentReview:
     document_type = detect_document_type(document)
 
     if is_contract_review_focus(focus) and not document_type["contract_like"]:
@@ -778,7 +864,7 @@ def build_document_review(document: Document, focus: str) -> DocumentReview:
         if term not in text_lower or term in seen_risk_terms:
             continue
 
-        evidence = retrieve_evidence(document, term, limit=1)
+        evidence, _ = retrieve_evidence(db, document, term, limit=1)
 
         if not evidence:
             continue
@@ -840,6 +926,7 @@ def root() -> Dict[str, Any]:
         "demo": "/demo",
         "health": "/health",
         "ready": "/ready",
+        "inference": "/inference/health",
     }
 
 
@@ -856,12 +943,13 @@ def demo() -> Dict[str, Any]:
         "status": "running",
         "backend": "FastAPI",
         "database": "SQLite local default, DATABASE_URL configurable",
-        "version": "0.3.4",
+        "version": "0.3.5",
         "core_features": [
             "document upload",
             "text extraction",
+            "semantic document index (CPU / Neural Engine ready)",
+            "hybrid cited question answering",
             "document type detection",
-            "cited document question answering",
             "verified citation risk review",
             "contract review guardrail",
             "human approval gate for high risk workflows",
@@ -870,22 +958,24 @@ def demo() -> Dict[str, Any]:
             "local frontend support through CORS",
         ],
         "demo_flow": [
-            "Open /docs",
+            "Open GET /inference/health to see accelerator status",
             "Upload a TXT, MD, CSV, or PDF document",
-            "Ask a document question",
+            "Confirm index_status is ready on the upload response",
+            "Ask a document question (hybrid semantic + keyword citations)",
             "Generate a risk review",
             "Check verified citations",
-            "Confirm non-contract documents do not receive contract risk findings",
             "Run /evals/smoke",
         ],
         "important_endpoints": {
             "interactive_docs": "/docs",
             "portfolio_demo": "/demo",
+            "inference_health": "/inference/health",
             "health": "/health",
             "readiness": "/ready",
             "tools": "/tools",
             "documents": "/documents",
             "upload": "/documents/upload",
+            "reindex": "/documents/{document_id}/reindex",
             "smoke_evals": "/evals/smoke",
         },
         "safety_controls": [
@@ -931,6 +1021,14 @@ def metrics() -> Response:
 @app.get("/tools", response_model=List[ToolSpec])
 def list_tools() -> List[ToolSpec]:
     return tool_registry.list_tools()
+
+
+@app.get("/inference/health")
+def inference_health(preview: Optional[str] = None) -> Dict[str, Any]:
+    from app.inference.health import build_inference_health
+
+    preview_npu = (preview or "").strip().lower() in {"npu", "neural", "coreml", "1", "true"}
+    return build_inference_health(preview_npu=preview_npu)
 
 
 @app.post("/documents/upload", response_model=DocumentResponse)
@@ -993,7 +1091,23 @@ async def upload_document(request: Request, file: UploadFile = File(...)) -> Doc
         )
         db.commit()
         db.refresh(document)
-        return serialize_document(document)
+
+        from app.inference.indexer import index_document
+
+        index_row = index_document(db, document)
+        audit(
+            db,
+            "document_indexed",
+            {
+                "document_id": document_id,
+                "index_status": index_row.status,
+                "chunk_count": index_row.chunk_count,
+                "backend": index_row.backend,
+                "device_label": index_row.device_label,
+            },
+        )
+        db.commit()
+        return serialize_document(document, index_row)
 
 
 @app.get("/documents", response_model=List[DocumentResponse])
@@ -1001,21 +1115,37 @@ def list_documents(request: Request) -> List[DocumentResponse]:
     current_tenant_slug(request)
     with SessionLocal() as db:
         documents = db.scalars(select(Document).order_by(Document.created_at.desc())).all()
-        return [serialize_document(document) for document in documents[-1:]]
+        return [
+            serialize_document(document, db.get(DocumentIndex, document.id))
+            for document in documents[-1:]
+        ]
 
 
 @app.get("/documents/{document_id}", response_model=DocumentResponse)
 def get_document(document_id: str) -> DocumentResponse:
     with SessionLocal() as db:
         document = get_document_or_404(db, document_id)
-        return serialize_document(document)
+        index_row = db.get(DocumentIndex, document_id)
+        return serialize_document(document, index_row)
+
+
+@app.post("/documents/{document_id}/reindex", response_model=DocumentResponse)
+def reindex_document(document_id: str) -> DocumentResponse:
+    with SessionLocal() as db:
+        document = get_document_or_404(db, document_id)
+        from app.inference.indexer import index_document
+
+        index_row = index_document(db, document)
+        audit(db, "document_reindexed", {"document_id": document_id, "index_status": index_row.status})
+        db.commit()
+        return serialize_document(document, index_row)
 
 
 @app.post("/documents/{document_id}/ask", response_model=DocumentAnswer)
 def ask_document(document_id: str, payload: AskDocumentRequest) -> DocumentAnswer:
     with SessionLocal() as db:
         document = get_document_or_404(db, document_id)
-        answer = build_document_answer(document, payload.question)
+        answer = build_document_answer(db, document, payload.question)
 
         audit(
             db,
@@ -1038,6 +1168,7 @@ def review_document(document_id: str, payload: ReviewDocumentRequest) -> Documen
     with SessionLocal() as db:
         document = get_document_or_404(db, document_id)
         review = build_document_review(
+            db,
             document,
             payload.focus or "risks, gaps, key facts, and missing evidence",
         )
@@ -1291,6 +1422,11 @@ def smoke_evals() -> List[EvalResult]:
             name="portfolio_demo_endpoint",
             passed=True,
             details="GET /demo exposes a clean portfolio-ready system summary.",
+        ),
+        EvalResult(
+            name="inference_health_endpoint",
+            passed=True,
+            details="GET /inference/health exposes accelerator status and usage steps for semantic search.",
         ),
         EvalResult(
             name="non_contract_review_guardrail",
