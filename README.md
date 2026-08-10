@@ -94,6 +94,26 @@ Recommended first SaaS target:
 - Render
 - then Railway or Fly.io if you want a different hosting model
 
+## Cloudflare Pages
+
+Cloudflare is supported as a **Pages frontend + API proxy** path:
+
+- build the static Pages output with [`scripts/build_pages.py`](/Users/giancarlovizhnay/first-ai-agent/scripts/build_pages.py)
+- serve the generated `dist/index.html` and `dist/evidenceos.html` from Pages
+- use [`index.html`](/Users/giancarlovizhnay/first-ai-agent/index.html) as the local root redirect
+- proxy `/api/*` through Cloudflare Pages Functions via [`functions/api/[[path]].js`](/Users/giancarlovizhnay/first-ai-agent/functions/api/[[path]].js)
+- set `EVIDENCEOS_API_ORIGIN` to the backend origin you want Cloudflare to forward to
+
+This is the pragmatic Cloudflare path for this repo. The backend still uses local disk and SQLAlchemy, so a full Workers-native port would require replacing storage and the database layer.
+
+Cloudflare setup:
+
+1. Deploy the FastAPI backend somewhere reachable, such as Render, Fly.io, or Railway
+2. Run `python3 scripts/build_pages.py` before deployment
+3. Deploy this repo to Cloudflare Pages using [`wrangler.toml`](/Users/giancarlovizhnay/first-ai-agent/wrangler.toml)
+4. Set `EVIDENCEOS_API_ORIGIN=https://your-backend.example.com`
+5. Open the Pages URL and the frontend will talk to `/api/*` on the same origin
+
 Use the included `Dockerfile` as the deployment entrypoint.
 
 ## Docker build

@@ -78,3 +78,26 @@ def test_reindex_endpoint() -> None:
     reindex = client.post(f"/documents/{document_id}/reindex")
     assert reindex.status_code == 200
     assert reindex.json()["index_status"] == "ready"
+
+
+def test_documents_endpoint_returns_recent_documents() -> None:
+    first = client.post(
+        "/documents/upload",
+        files={"file": ("recent_one.txt", io.BytesIO(b"First recent document."), "text/plain")},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/documents/upload",
+        files={"file": ("recent_two.txt", io.BytesIO(b"Second recent document."), "text/plain")},
+    )
+    assert second.status_code == 200
+
+    response = client.get("/documents")
+    assert response.status_code == 200
+    documents = response.json()
+    filenames = [document["filename"] for document in documents]
+    assert "recent_two.txt" in filenames
+    assert "recent_one.txt" in filenames
+    assert documents[0]["filename"] == "recent_two.txt"
+    assert documents[1]["filename"] == "recent_one.txt"

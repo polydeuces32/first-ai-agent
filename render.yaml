@@ -19,6 +19,17 @@ services:
         value: /var/data/uploads
       - key: MAX_UPLOAD_BYTES
         value: "10485760"
+      # Set to your public domain so shared /s/<id> links resolve correctly.
+      # e.g. https://evidenceos.ai  (leave blank to derive from the request)
+      - key: PUBLIC_SITE_URL
+        sync: false
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: PRIVACY_EMAIL
+        sync: false
+      # Comma-separated origins allowed to call the API from a browser.
+      - key: ALLOWED_ORIGINS
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: evidenceos-db

@@ -5,6 +5,8 @@ __pycache__/
 *.log
 first-ai-agent.zip
 .vercel
+.wrangler/
+dist/
 
 # Local backend runtime files
 backend/agentops.db

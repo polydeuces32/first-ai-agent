@@ -1,0 +1,40 @@
+{
+  "name": "EvidenceOS",
+  "subtitle": "No evidence, no answer",
+  "bundle_id": "com.evidenceos.app",
+  "primary_category": "Productivity",
+  "secondary_category": "Reference",
+  "privacy_policy_url": "https://evidenceos.app/privacy",
+  "support_url": "https://evidenceos.app/support",
+  "marketing_url": "https://evidenceos.app/try",
+  "keywords": [
+    "citations",
+    "documents",
+    "evidence",
+    "contract",
+    "research",
+    "pdf",
+    "verify",
+    "compliance",
+    "local",
+    "trust"
+  ],
+  "description": "EvidenceOS answers questions about your documents using verified citations only. Every sentence traces back to the source text. If there is no evidence, EvidenceOS refuses to answer instead of guessing.\n\n• Paste or import a document\n• Ask any question\n• Get cited answers with highlighted source sentences\n• Share verified result cards\n\nHealth and legal examples are informational demonstrations with cited public sources. Not medical, legal, or financial advice. Always verify citations against the original document.",
+  "promotional_text": "An AI that refuses to make things up. Every answer is a citation — or no answer at all.",
+  "review_notes": "EvidenceOS is a document Q&A demo with extractive cited answers. Health examples cite CDC public pages and include in-app and web health disclaimers. No accounts required for core demo. Native iOS features: document import from Files, share, offline error handling, first-launch disclaimer.",
+  "app_privacy": {
+    "data_linked_to_user": [],
+    "data_not_linked_to_user": [
+      "User Content (pasted document text and questions, for demo processing)",
+      "Diagnostics (crash and performance logs if enabled)"
+    ],
+    "tracking": false
+  },
+  "screenshot_captions": [
+    "No evidence. No answer.",
+    "Paste your document or pick an example",
+    "Every answer is a verified citation",
+    "Cited sentences highlighted in source",
+    "Refuses to guess when evidence is missing"
+  ]
+}

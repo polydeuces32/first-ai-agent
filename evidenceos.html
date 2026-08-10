@@ -5,169 +5,1287 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EvidenceOS</title>
   <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071019;
+      --bg-2: #0a1622;
+      --panel: rgba(10, 22, 34, 0.84);
+      --panel-2: rgba(14, 29, 44, 0.92);
+      --panel-3: rgba(18, 36, 52, 0.92);
+      --border: rgba(145, 204, 255, 0.14);
+      --border-strong: rgba(145, 204, 255, 0.24);
+      --text: #e5f1ff;
+      --muted: #8ea4ba;
+      --muted-2: #6f849a;
+      --accent: #7dd3fc;
+      --accent-2: #5eead4;
+      --success: #78f0b6;
+      --warn: #ffd27c;
+      --danger: #ff8d9b;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+      --radius: 22px;
+      --radius-sm: 14px;
+    }
+
     * { box-sizing: border-box; }
-    body {
+
+    html, body {
       margin: 0;
-      background: #0a0a0a;
-      color: #b8f0b0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 14px;
-      line-height: 1.45;
-      transition: color 0.2s, background 0.2s;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at 15% 15%, rgba(94, 234, 212, 0.12), transparent 24%),
+        radial-gradient(circle at 82% 10%, rgba(125, 211, 252, 0.12), transparent 20%),
+        radial-gradient(circle at 80% 90%, rgba(125, 211, 252, 0.08), transparent 22%),
+        linear-gradient(180deg, #071019 0%, #08131d 46%, #050b11 100%);
+      color: var(--text);
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
     }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,0.35), transparent 88%);
+      opacity: 0.45;
+    }
+
     body.npu-active {
-      background: #050810;
-      color: #b8e8ff;
+      --accent: #9ae6ff;
+      --accent-2: #5dd6ff;
+      --success: #9ce7ff;
+      background:
+        radial-gradient(circle at 15% 15%, rgba(90, 180, 255, 0.14), transparent 22%),
+        radial-gradient(circle at 85% 10%, rgba(93, 214, 255, 0.16), transparent 20%),
+        radial-gradient(circle at 75% 90%, rgba(93, 214, 255, 0.08), transparent 18%),
+        linear-gradient(180deg, #07131c 0%, #08151f 48%, #050a10 100%);
     }
-    body.npu-active .dim { color: #5a8aaa; }
-    body.npu-active .out { color: #d8f0ff; }
-    body.npu-active .npu-banner { color: #9ee0ff; }
-    body.npu-active #prompt-label { color: #7ec8ff; }
-    body.npu-active #cmd {
-      color: #b8e8ff;
-      border-color: #3a5a7a;
+
+    body.npu-active .logo-mark,
+    body.npu-active .hero-copy h1,
+    body.npu-active .metric strong,
+    body.npu-active .section-title,
+    body.npu-active .card-title,
+    body.npu-active .status-value {
+      text-shadow: 0 0 24px rgba(93, 214, 255, 0.12);
     }
-    body.npu-active #form { border-top-color: #2a4a6a; }
-    #screen {
-      height: 100vh;
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(1440px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 32px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 22px;
+      padding: 18px 22px;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(10, 21, 33, 0.88), rgba(8, 16, 25, 0.72));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(20px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .logo-mark {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(125, 211, 252, 0.2), rgba(94, 234, 212, 0.16));
+      border: 1px solid rgba(125, 211, 252, 0.24);
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+
+    .brand-copy {
+      min-width: 0;
+    }
+
+    .brand-copy h1 {
+      margin: 0;
+      font-size: 1.08rem;
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+    }
+
+    .brand-copy p {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 0.9rem;
+      white-space: nowrap;
+    }
+
+    .pill strong { font-weight: 700; }
+
+    .pill.good {
+      border-color: rgba(120, 240, 182, 0.2);
+      background: rgba(120, 240, 182, 0.08);
+      color: #bff6db;
+    }
+
+    .pill.warn {
+      border-color: rgba(255, 210, 124, 0.2);
+      background: rgba(255, 210, 124, 0.08);
+      color: #ffe1a4;
+    }
+
+    .button {
+      appearance: none;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 650;
+      color: var(--text);
+      background: linear-gradient(180deg, rgba(125, 211, 252, 0.16), rgba(125, 211, 252, 0.08));
+      box-shadow: 0 10px 24px rgba(2, 9, 15, 0.2);
+      cursor: pointer;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+
+    .button:hover { transform: translateY(-1px); border-color: rgba(125, 211, 252, 0.32); }
+    .button.secondary {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: var(--border);
+      color: var(--text);
+    }
+    .button.ghost {
+      background: transparent;
+      border-color: var(--border);
+      color: var(--muted);
+      box-shadow: none;
+    }
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.9fr);
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .hero-card,
+    .side-card,
+    .module,
+    .command-panel {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(12, 23, 35, 0.92), rgba(8, 16, 24, 0.84));
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .hero-card {
+      padding: 28px;
+      min-height: 270px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -40px -40px auto;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(125, 211, 252, 0.18), transparent 68%);
+      filter: blur(6px);
+      pointer-events: none;
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 1;
+      max-width: 760px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+      font-size: 0.84rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .hero-copy h2 {
+      margin: 0;
+      font-size: clamp(2.5rem, 6vw, 4.8rem);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+    }
+
+    .hero-copy p {
+      max-width: 720px;
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 1.02rem;
+      line-height: 1.65;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .metric {
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted-2);
+      font-size: 0.82rem;
+      margin-bottom: 8px;
+      letter-spacing: 0.02em;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 1rem;
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .side-card {
+      padding: 20px;
       display: flex;
       flex-direction: column;
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 12px;
+      gap: 14px;
     }
-    #log {
-      flex: 1;
-      overflow-y: auto;
+
+    .section-title {
+      margin: 0;
+      font-size: 0.95rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .health-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .health-item {
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .health-item span {
+      display: block;
+      color: var(--muted-2);
+      font-size: 0.78rem;
+      margin-bottom: 6px;
+    }
+
+    .health-item strong {
+      display: block;
+      font-size: 0.96rem;
+      line-height: 1.35;
+    }
+
+    .status-value {
+      color: var(--success);
+    }
+
+    .status-mono {
+      color: #d3e9ff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.84rem;
+      word-break: break-word;
+    }
+
+    .mini-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 2px;
+    }
+
+    .mini-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+    }
+
+    .mini-row small {
+      color: var(--muted);
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr) minmax(320px, 0.92fr);
+      gap: 18px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .module {
+      padding: 18px;
+      min-height: 340px;
+    }
+
+    .module-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 1.2rem;
+      letter-spacing: -0.03em;
+    }
+
+    .card-subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 0.93rem;
+    }
+
+    .card-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      color: #cde9ff;
+      border: 1px solid rgba(125, 211, 252, 0.22);
+      background: rgba(125, 211, 252, 0.08);
+      white-space: nowrap;
+    }
+
+    .dropzone {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px dashed rgba(125, 211, 252, 0.24);
+      background: linear-gradient(180deg, rgba(125, 211, 252, 0.08), rgba(255, 255, 255, 0.02));
+    }
+
+    .dropzone strong {
+      font-size: 1rem;
+    }
+
+    .dropzone p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 0.92rem;
+    }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .field input,
+    .field textarea {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 13px 14px;
+      font: inherit;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .field textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .field input:focus,
+    .field textarea:focus {
+      border-color: rgba(125, 211, 252, 0.4);
+      box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.08);
+    }
+
+    .split {
+      display: grid;
+      gap: 12px;
+    }
+
+    .current-doc {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .doc-name {
+      margin: 0;
+      font-size: 1.02rem;
+      word-break: break-word;
+    }
+
+    .doc-meta {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .doc-meta span {
+      color: var(--text);
+    }
+
+    .feed {
+      display: grid;
+      gap: 10px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .event {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .event small {
+      display: block;
+      color: var(--muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.02em;
+    }
+
+    .event p {
+      margin: 0;
+      line-height: 1.5;
       white-space: pre-wrap;
       word-break: break-word;
-      padding: 8px 0;
     }
-    .dim { color: #6a8f6a; }
-    .err { color: #f08080; }
-    .out { color: #d8e8d0; }
-    .npu-banner { color: #8bd49c; font-weight: bold; }
-    #form {
-      display: flex;
+
+    .columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .endpoint-list {
+      display: grid;
       gap: 8px;
-      border-top: 1px solid #2a3a2a;
-      padding-top: 10px;
+      margin-top: 10px;
     }
-    #prompt-label {
-      color: #8bd49c;
-      flex-shrink: 0;
-      padding-top: 6px;
+
+    .endpoint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 0.92rem;
     }
-    #cmd {
-      flex: 1;
-      background: transparent;
-      border: 1px solid #2a3a2a;
-      color: inherit;
+
+    .endpoint code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #d6eaff;
+      font-size: 0.86rem;
+    }
+
+    .docs-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .doc-row {
+      display: grid;
+      gap: 12px;
+      padding: 16px 16px 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+        rgba(255, 255, 255, 0.025);
+      position: relative;
+      overflow: hidden;
+      min-height: 170px;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+
+    .doc-row::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 3px;
+      background: linear-gradient(180deg, rgba(125, 211, 252, 0.7), rgba(94, 234, 212, 0.65));
+      opacity: 0.22;
+    }
+
+    .doc-row:hover {
+      transform: translateY(-1px);
+      border-color: rgba(125, 211, 252, 0.16);
+      background:
+        linear-gradient(180deg, rgba(125, 211, 252, 0.07), rgba(255, 255, 255, 0.03)),
+        rgba(255, 255, 255, 0.03);
+    }
+
+    .doc-row.active {
+      border-color: rgba(125, 211, 252, 0.28);
+      background:
+        linear-gradient(180deg, rgba(125, 211, 252, 0.11), rgba(255, 255, 255, 0.035)),
+        rgba(255, 255, 255, 0.03);
+      box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.08);
+    }
+
+    .doc-row.active::before {
+      opacity: 0.86;
+    }
+
+    .doc-row-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .doc-row-title {
+      min-width: 0;
+    }
+
+    .doc-row-title strong {
+      display: block;
+      font-size: 1rem;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    .doc-row-title small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      word-break: break-word;
+    }
+
+    .doc-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+
+    .doc-status.good {
+      color: #bff6db;
+      border-color: rgba(120, 240, 182, 0.18);
+      background: rgba(120, 240, 182, 0.08);
+    }
+
+    .doc-status.warn {
+      color: #ffe1a4;
+      border-color: rgba(255, 210, 124, 0.16);
+      background: rgba(255, 210, 124, 0.08);
+    }
+
+    .doc-row-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .mini-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    .doc-row-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-top: auto;
+    }
+
+    .doc-row-actions .button {
+      padding: 9px 12px;
+      font-size: 0.88rem;
+    }
+
+    .doc-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .doc-chip strong {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .command-panel {
+      padding: 16px 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .command-bar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .command-bar input {
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      padding: 15px 16px;
       font: inherit;
-      padding: 6px 8px;
-      border-radius: 2px;
       outline: none;
     }
-    #cmd:focus { border-color: #4a7a4a; }
-    body.npu-active #cmd:focus { border-color: #5a9ac8; }
-    #fileInput { display: none; }
+
+    .command-bar input:focus {
+      border-color: rgba(125, 211, 252, 0.4);
+      box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.08);
+    }
+
+    .command-hints {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .chip:hover {
+      border-color: rgba(125, 211, 252, 0.24);
+      color: var(--text);
+    }
+
+    .footer-note {
+      color: var(--muted-2);
+      font-size: 0.84rem;
+      line-height: 1.5;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 1180px) {
+      .hero,
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        width: min(100vw - 20px, 1440px);
+        padding-top: 12px;
+      }
+
+      .topbar,
+      .hero-card,
+      .side-card,
+      .module,
+      .command-panel {
+        border-radius: 20px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .top-actions {
+        justify-content: flex-start;
+      }
+
+      .stats,
+      .health-grid,
+      .columns,
+      .command-bar {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-copy h2 {
+        font-size: clamp(2rem, 10vw, 3.6rem);
+      }
+    }
   </style>
 </head>
 <body>
-  <div id="screen">
-    <div id="log"></div>
-    <form id="form" autocomplete="off">
-      <span id="prompt-label">evidenceos&gt;</span>
-      <input id="cmd" type="text" spellcheck="false" autofocus placeholder="help" />
-    </form>
-    <input id="fileInput" type="file" accept=".pdf,.txt,.md,.csv,text/*,application/pdf" />
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo-mark">E</div>
+        <div class="brand-copy">
+          <h1>EvidenceOS</h1>
+          <p>Evidence-backed document intelligence</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div id="healthPill" class="pill warn">System <strong>Checking</strong></div>
+        <div id="docPill" class="pill">No active document</div>
+        <button class="button secondary" id="uploadButton" type="button">Upload Document</button>
+        <button class="button" id="smokeButton" type="button">Run Smoke</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <article class="hero-card">
+        <div class="hero-copy">
+          <div class="eyebrow">Verified answers, risk review, audit trail</div>
+          <h2>Evidence you can trust.</h2>
+          <p>
+            Upload a document, ask a question, and get a cited answer or a guarded review.
+            The interface is built to feel like a product, not a terminal, while keeping the same
+            safety checks and retrieval pipeline underneath.
+          </p>
+          <div class="hero-actions">
+            <button class="button" id="askDemoButton" type="button">Ask a Question</button>
+            <button class="button secondary" id="reviewDemoButton" type="button">Create Review</button>
+            <button class="button ghost" id="healthButton" type="button">Refresh Health</button>
+          </div>
+          <div class="stats">
+            <div class="metric">
+              <span>Workflow</span>
+              <strong>Upload, cite, review, audit</strong>
+            </div>
+            <div class="metric">
+              <span>Retrieval</span>
+              <strong id="retrievalMetric">Hybrid / keyword</strong>
+            </div>
+            <div class="metric">
+              <span>Index status</span>
+              <strong id="indexMetric">Waiting for a document</strong>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <aside class="side-card">
+        <h3 class="section-title">System Health</h3>
+        <div class="health-grid">
+          <div class="health-item">
+            <span>Backend</span>
+            <strong id="backendStatus" class="status-value">Checking</strong>
+          </div>
+          <div class="health-item">
+            <span>Index</span>
+            <strong id="indexStatus" class="status-value">Pending</strong>
+          </div>
+          <div class="health-item">
+            <span>Device</span>
+            <strong id="deviceStatus">Unknown</strong>
+          </div>
+          <div class="health-item">
+            <span>Model</span>
+            <strong id="modelStatus">Unknown</strong>
+          </div>
+        </div>
+        <div class="mini-list">
+          <div class="mini-row">
+            <div>
+              <strong>Active mode</strong>
+              <small id="modeLabel">Local / API proxy</small>
+            </div>
+            <span class="pill good" id="neuralPill">Ready</span>
+          </div>
+          <div class="mini-row">
+            <div>
+              <strong>Preview</strong>
+              <small id="previewLabel">Standard</small>
+            </div>
+            <span class="pill" id="docCountPill">0 docs</span>
+          </div>
+        </div>
+        <div>
+          <h3 class="section-title" style="margin-top: 8px;">Endpoints</h3>
+          <div class="endpoint-list">
+            <div class="endpoint"><span>Health</span><code>/health</code></div>
+            <div class="endpoint"><span>Ready</span><code>/ready</code></div>
+            <div class="endpoint"><span>Inference</span><code>/inference/health</code></div>
+            <div class="endpoint"><span>Documents</span><code>/documents/upload</code></div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="content-grid">
+      <article class="module">
+        <div class="module-header">
+          <div>
+            <h3 class="card-title">Document Intake</h3>
+            <p class="card-subtitle">Drop in a PDF, TXT, MD, or CSV and the app will extract text, build an index, and expose cited answers.</p>
+          </div>
+          <div id="uploadBadge" class="card-badge">Index: waiting</div>
+        </div>
+        <div class="dropzone">
+          <strong>Upload a document</strong>
+          <p>
+            The backend stores the file, extracts text, and builds the hybrid semantic index.
+            On Cloudflare Pages, the frontend talks to the backend through `/api/*`.
+          </p>
+          <div class="action-row">
+            <button class="button" id="chooseFileButton" type="button">Choose File</button>
+            <button class="button secondary" id="openHealthButton" type="button">Check Health</button>
+          </div>
+        </div>
+
+        <div class="split" style="margin-top: 16px;">
+          <div class="current-doc">
+            <h4 class="doc-name" id="currentDocName">No document loaded</h4>
+            <div class="doc-meta">
+              <div>Document ID: <span id="currentDocId">none</span></div>
+              <div>Upload status: <span id="currentDocStatus">idle</span></div>
+              <div>Index device: <span id="currentDocDevice">unknown</span></div>
+            </div>
+          </div>
+
+          <div class="columns">
+            <div class="field">
+              <label for="questionInput">Ask a question</label>
+              <input id="questionInput" type="text" placeholder="What are the payment terms?" />
+              <button class="button" id="askButton" type="button">Ask with citations</button>
+            </div>
+            <div class="field">
+              <label for="focusInput">Review focus</label>
+              <textarea id="focusInput" placeholder="risks, gaps, key facts, and missing evidence"></textarea>
+              <button class="button secondary" id="reviewButton" type="button">Generate review</button>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="module">
+        <div class="module-header">
+          <div>
+            <h3 class="card-title">Assistant Feed</h3>
+            <p class="card-subtitle">Recent actions and responses from the live session.</p>
+          </div>
+          <div class="card-badge" id="sessionBadge">Interactive session</div>
+        </div>
+        <div id="feed" class="feed" aria-live="polite"></div>
+      </article>
+
+      <article class="module">
+        <div class="module-header">
+          <div>
+            <h3 class="card-title">Recent Documents</h3>
+            <p class="card-subtitle">Pulled from <code>/documents</code>. Click any row to make it the active document.</p>
+          </div>
+          <div class="card-badge" id="docsBadge">0 loaded</div>
+        </div>
+        <div id="docsList" class="docs-list" aria-live="polite"></div>
+        <div class="split" style="margin-top: 14px;">
+          <div class="mini-row">
+            <div>
+              <strong>Primary mode</strong>
+              <small>Product UI + commands</small>
+            </div>
+            <span class="pill" id="apiLabel">API ready</span>
+          </div>
+          <div class="mini-row">
+            <div>
+              <strong>Active source</strong>
+              <small id="activeSource">local / api proxy</small>
+            </div>
+            <span class="pill good" id="appModePill">Live</span>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="command-panel">
+      <div class="module-header" style="margin-bottom: 0;">
+        <div>
+          <h3 class="card-title">Command Center</h3>
+          <p class="card-subtitle">Use the command bar for power-user flows. The buttons above cover the common paths.</p>
+        </div>
+        <div class="card-badge">type help</div>
+      </div>
+      <form id="commandForm" class="command-bar" autocomplete="off">
+        <input id="cmd" type="text" spellcheck="false" autofocus placeholder="help, health, upload, ask <question>, review, smoke" />
+        <button class="button" type="submit">Run</button>
+      </form>
+      <div class="command-hints">
+        <span class="chip" data-command="health">health</span>
+        <span class="chip" data-command="upload">upload</span>
+        <span class="chip" data-command="smoke">smoke</span>
+        <span class="chip" data-command="help">help</span>
+        <span class="chip" data-command="clear">clear</span>
+      </div>
+      <div class="footer-note">
+        Local mode uses <code>http://127.0.0.1:8000</code>. Hosted mode defaults to <code>/api</code>, which is compatible with Cloudflare Pages Functions.
+      </div>
+    </section>
   </div>
 
+  <input id="fileInput" class="hidden" type="file" accept=".pdf,.txt,.md,.csv,text/*,application/pdf" />
+
   <script>
-    const API_BASE = "http://127.0.0.1:8000";
+    const API_BASE = (() => {
+      const params = new URLSearchParams(location.search);
+      const explicit = params.get("api");
+
+      if (explicit) {
+        return explicit.replace(/\/+$/, "");
+      }
+
+      if (location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+        return "http://127.0.0.1:8000";
+      }
+
+      return "/api";
+    })();
     const URL_PREVIEW_NPU = new URLSearchParams(location.search).get("preview") === "npu";
-    const logEl = document.getElementById("log");
+
+    const feedEl = document.getElementById("feed");
     const cmdEl = document.getElementById("cmd");
     const fileInput = document.getElementById("fileInput");
+    const questionInput = document.getElementById("questionInput");
+    const focusInput = document.getElementById("focusInput");
+
+    const uploadButton = document.getElementById("uploadButton");
+    const smokeButton = document.getElementById("smokeButton");
+    const askButton = document.getElementById("askButton");
+    const reviewButton = document.getElementById("reviewButton");
+    const healthButton = document.getElementById("healthButton");
+    const openHealthButton = document.getElementById("openHealthButton");
+    const chooseFileButton = document.getElementById("chooseFileButton");
+    const askDemoButton = document.getElementById("askDemoButton");
+    const reviewDemoButton = document.getElementById("reviewDemoButton");
+
+    const healthPill = document.getElementById("healthPill");
+    const docPill = document.getElementById("docPill");
+    const retrievalMetric = document.getElementById("retrievalMetric");
+    const indexMetric = document.getElementById("indexMetric");
+    const backendStatus = document.getElementById("backendStatus");
+    const indexStatus = document.getElementById("indexStatus");
+    const deviceStatus = document.getElementById("deviceStatus");
+    const modelStatus = document.getElementById("modelStatus");
+    const neuralPill = document.getElementById("neuralPill");
+    const previewLabel = document.getElementById("previewLabel");
+    const docCountPill = document.getElementById("docCountPill");
+    const uploadBadge = document.getElementById("uploadBadge");
+    const docsList = document.getElementById("docsList");
+    const docsBadge = document.getElementById("docsBadge");
+    const currentDocName = document.getElementById("currentDocName");
+    const currentDocId = document.getElementById("currentDocId");
+    const currentDocStatus = document.getElementById("currentDocStatus");
+    const currentDocDevice = document.getElementById("currentDocDevice");
+    const apiLabel = document.getElementById("apiLabel");
+    const activeSource = document.getElementById("activeSource");
+    const appModePill = document.getElementById("appModePill");
+    const modeLabel = document.getElementById("modeLabel");
+
     let docId = localStorage.getItem("evidenceos_doc_id") || null;
     let pendingUpload = false;
     let npuPreview = URL_PREVIEW_NPU;
+    let uploadCount = Number(localStorage.getItem("evidenceos_upload_count") || "0");
+    let lastIndexStatus = "pending";
+    let lastDocName = "No document loaded";
+    let recentDocuments = [];
 
     function setNpuTheme(active) {
       document.body.classList.toggle("npu-active", active);
       document.title = active ? "EvidenceOS · Neural Engine" : "EvidenceOS";
+      previewLabel.textContent = active ? "Neural Engine preview" : "Standard";
     }
 
-    function line(text, cls = "") {
-      const div = document.createElement("div");
-      if (cls) div.className = cls;
-      div.textContent = text;
-      logEl.appendChild(div);
-      logEl.scrollTop = logEl.scrollHeight;
+    function appendEvent(title, text) {
+      const event = document.createElement("article");
+      event.className = "event";
+
+      const stamp = document.createElement("small");
+      stamp.textContent = title;
+
+      const body = document.createElement("p");
+      body.textContent = text;
+
+      event.append(stamp, body);
+      feedEl.prepend(event);
     }
 
-    function printHelp() {
-      line("Commands:", "dim");
-      line("  help              show this message", "dim");
-      line("  health            backend + index status", "dim");
-      line("  health npu        preview Neural Engine UI (demo)", "dim");
-      line("  health cpu        back to live status", "dim");
-      line("  upload            pick a file (pdf, txt, md, csv)", "dim");
-      line("  use <doc-id>      set active document", "dim");
-      line("  ask <question>    cited answer", "dim");
-      line("  review [focus]    risk review", "dim");
-      line("  smoke             run eval checks", "dim");
-      line("  clear             clear screen", "dim");
-      line("Open with ?preview=npu in the URL for NPU demo on load.", "dim");
-      if (docId) line(`Active document: ${docId}`, "dim");
+    function setDocState(name, id, status, device) {
+      lastDocName = name || lastDocName;
+      currentDocName.textContent = name || "No document loaded";
+      currentDocId.textContent = id || "none";
+      currentDocStatus.textContent = status || "idle";
+      currentDocDevice.textContent = device || "unknown";
+      docPill.textContent = id ? `Doc ${id.slice(0, 8)}` : "No active document";
+      indexMetric.textContent = status || "waiting";
+      uploadBadge.textContent = `Index: ${status || "waiting"}`;
+      lastIndexStatus = status || lastIndexStatus;
     }
 
-    async function api(path, options = {}) {
-      const res = await fetch(`${API_BASE}${path}`, options);
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = { raw: text }; }
-      if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
-      return data;
+    function formatCreatedAt(value) {
+      if (!value) return "recent";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "recent";
+      return date.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
     }
 
-    function formatHealth(inf, backendStatus) {
+    function renderRecentDocuments(documents) {
+      recentDocuments = Array.isArray(documents) ? documents : [];
+      docsBadge.textContent = `${recentDocuments.length} loaded`;
+      docsList.innerHTML = "";
+
+      if (!recentDocuments.length) {
+        const empty = document.createElement("div");
+        empty.className = "event";
+        empty.innerHTML = "<small>Documents</small><p>No documents found yet. Upload one to populate this list.</p>";
+        docsList.appendChild(empty);
+        docCountPill.textContent = `${uploadCount} upload${uploadCount === 1 ? "" : "s"}`;
+        return;
+      }
+
+      recentDocuments.forEach((doc) => {
+        const row = document.createElement("article");
+        row.className = "doc-row";
+        if (doc.id === docId) {
+          row.classList.add("active");
+        }
+
+        const top = document.createElement("div");
+        top.className = "doc-row-top";
+
+        const title = document.createElement("div");
+        title.className = "doc-row-title";
+        const strong = document.createElement("strong");
+        strong.textContent = doc.filename || doc.id;
+        const meta = document.createElement("small");
+        meta.textContent = `Uploaded ${formatCreatedAt(doc.created_at)} • ${doc.text_length || 0} chars`;
+        title.append(strong, meta);
+
+        const status = document.createElement("span");
+        status.className = doc.semantic_search_ready ? "doc-status good" : "doc-status warn";
+        status.textContent = doc.semantic_search_ready ? "Index ready" : (doc.index_status || "pending");
+
+        top.append(title, status);
+
+        const tags = document.createElement("div");
+        tags.className = "doc-row-meta";
+        const tagsData = [
+          `pages ${doc.page_count || 0}`,
+          `device ${doc.index_device || "unknown"}`,
+          `chunks ${doc.chunk_count || 0}`,
+        ];
+        tagsData.forEach((label) => {
+          const tag = document.createElement("span");
+          tag.className = "mini-tag";
+          tag.textContent = label;
+          tags.appendChild(tag);
+        });
+
+        const actions = document.createElement("div");
+        actions.className = "doc-row-actions";
+
+        const chip = document.createElement("span");
+        chip.className = "doc-chip";
+        chip.innerHTML = `<strong>${(doc.text_length || 0).toLocaleString()}</strong> chars`;
+
+        const useButton = document.createElement("button");
+        useButton.className = "button secondary";
+        useButton.type = "button";
+        useButton.textContent = doc.id === docId ? "Active" : "Use";
+        useButton.disabled = doc.id === docId;
+        useButton.addEventListener("click", () => {
+          docId = doc.id;
+          localStorage.setItem("evidenceos_doc_id", docId);
+          setDocState(doc.filename || "Selected document", doc.id, doc.index_status || "pending", doc.index_device || "unknown");
+          appendEvent("Document", `active doc: ${doc.id}`);
+          renderRecentDocuments(recentDocuments);
+        });
+
+        const idTag = document.createElement("span");
+        idTag.className = "pill";
+        idTag.textContent = doc.id.slice(0, 8);
+
+        actions.append(chip, idTag, useButton);
+        row.append(top, tags, actions);
+        docsList.appendChild(row);
+      });
+
+      docCountPill.textContent = `${recentDocuments.length} loaded`;
+    }
+
+    function updateSystemPanel(inf, backend) {
+      const n = inf.neural_engine || {};
+      backendStatus.textContent = backend || "ok";
+      indexStatus.textContent = inf.active_backend || "pending";
+      deviceStatus.textContent = inf.device_label || "unknown";
+      modelStatus.textContent = inf.model_id || "unknown";
+      neuralPill.textContent = n.active ? "Neural active" : "CPU mode";
+      neuralPill.className = n.active ? "pill good" : "pill warn";
+      healthPill.innerHTML = n.active ? 'System <strong>Ready</strong>' : 'System <strong>Stable</strong>';
+      healthPill.className = n.active ? "pill good" : "pill warn";
+      retrievalMetric.textContent = inf.active_backend === "sentence" ? "Semantic / keyword" : "Hybrid / keyword";
+      modeLabel.textContent = inf.user_facing_label || "Local / API proxy";
+      appModePill.textContent = n.active ? "Accelerated" : "Live";
+      apiLabel.textContent = API_BASE.startsWith("/") ? "Same-origin API" : "Direct API";
+      activeSource.textContent = API_BASE.startsWith("/") ? "Cloudflare Pages proxy" : "local backend";
+    }
+
+    function formatHealth(inf, backendStatusValue) {
       const n = inf.neural_engine || {};
       const lines = [];
       if (inf.preview) {
-        lines.push("PREVIEW — simulated NPU / Neural Engine system");
-        lines.push("");
+        lines.push("Preview mode: simulated Neural Engine presentation");
       }
-      if (n.active) {
-        lines.push("━━━ Apple Neural Engine ━━━  ACTIVE");
-        lines.push("");
-      } else if (n.hardware_available) {
-        lines.push("━━━ Apple Silicon ━━━  CPU index (NPU not active)");
-        lines.push("");
-      }
-      lines.push(`backend: ${backendStatus}`);
-      lines.push(`label: ${inf.user_facing_label}`);
-      lines.push(`device: ${inf.device_label}`);
-      lines.push(`index backend: ${inf.active_backend}`);
-      lines.push(`model: ${inf.model_id}`);
-      if (n.message) lines.push(`note: ${n.message}`);
+      lines.push(`Backend: ${backendStatusValue}`);
+      lines.push(`Label: ${inf.user_facing_label}`);
+      lines.push(`Device: ${inf.device_label}`);
+      lines.push(`Index backend: ${inf.active_backend}`);
+      lines.push(`Model: ${inf.model_id}`);
+      if (n.message) lines.push(`Note: ${n.message}`);
       return lines.join("\n");
     }
 
     function formatAnswer(data) {
-      const lines = [];
-      lines.push(`mode: ${data.retrieval_mode || "?"}`);
-      lines.push(`confidence: ${data.confidence}%  abstained: ${data.abstained}`);
-      lines.push("");
-      lines.push(data.answer || "");
+      const parts = [];
+      parts.push(`mode: ${data.retrieval_mode || "?"}`);
+      parts.push(`confidence: ${data.confidence}%  abstained: ${data.abstained}`);
+      parts.push("");
+      parts.push(data.answer || "");
       if (data.citations && data.citations.length) {
-        lines.push("");
-        lines.push("citations:");
+        parts.push("");
+        parts.push("citations:");
         data.citations.forEach((c, i) => {
-          lines.push(`  [${i + 1}] score=${c.score} ${c.retrieval || ""} ${(c.source_text || "").slice(0, 200)}`);
+          parts.push(`  [${i + 1}] score=${c.score} ${(c.retrieval || "").trim()} ${(c.source_text || "").slice(0, 160)}`);
         });
       }
-      return lines.join("\n");
+      return parts.join("\n");
     }
 
     function formatReview(data) {
@@ -190,15 +1308,35 @@
       const lines = [
         `uploaded: ${data.filename}`,
         `doc: ${data.id}`,
+        `index: ${data.index_status}  chunks: ${data.chunk_count}`,
       ];
-      if (npuPreview) {
-        lines.push(`index: ready  chunks: ${data.chunk_count}  device: Apple Neural Engine (Core ML)`);
-        lines.push("(upload is real; index line shown as NPU preview)");
-      } else {
-        lines.push(`index: ${data.index_status}  chunks: ${data.chunk_count}`);
-        if (data.index_device) lines.push(`device: ${data.index_device}`);
-      }
+      if (data.index_device) lines.push(`device: ${data.index_device}`);
       return lines.join("\n");
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(`${API_BASE}${path}`, options);
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+      if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
+      return data;
+    }
+
+    async function loadRecentDocuments() {
+      const documents = await api("/documents");
+      renderRecentDocuments(documents);
+
+      if (docId) {
+        const active = documents.find((doc) => doc.id === docId);
+        if (active) {
+          setDocState(active.filename || "Selected document", active.id, active.index_status || "pending", active.index_device || "unknown");
+        }
+      }
     }
 
     async function runHealth(forcePreview) {
@@ -206,14 +1344,13 @@
       if (forcePreview === false) npuPreview = false;
 
       const path = npuPreview ? "/inference/health?preview=npu" : "/inference/health";
-      const h = await api("/health");
+      const backend = await api("/health");
       const inf = await api(path);
-      const neuralActive = inf.neural_engine && inf.neural_engine.active;
-      setNpuTheme(!!neuralActive);
-      if (neuralActive) {
-        line("EvidenceOS · Neural Engine indexing enabled", "npu-banner");
-      }
-      line(formatHealth(inf, h.status), "out");
+      const neuralActive = !!(inf.neural_engine && inf.neural_engine.active);
+      setNpuTheme(neuralActive);
+      updateSystemPanel(inf, backend.status);
+      appendEvent("Health", formatHealth(inf, backend.status));
+      previewLabel.textContent = npuPreview ? "Preview enabled" : "Live backend";
     }
 
     async function runUpload(file) {
@@ -222,7 +1359,11 @@
       const data = await api("/documents/upload", { method: "POST", body: form });
       docId = data.id;
       localStorage.setItem("evidenceos_doc_id", docId);
-      line(formatUpload(data), "out");
+      uploadCount += 1;
+      localStorage.setItem("evidenceos_upload_count", String(uploadCount));
+      setDocState(data.filename, data.id, data.index_status, data.index_device || "unknown");
+      appendEvent("Upload", formatUpload(data));
+      await loadRecentDocuments();
     }
 
     async function runAsk(question) {
@@ -232,10 +1373,8 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
       });
-      if (npuPreview && data.retrieval_mode) {
-        line(`mode: hybrid (semantic via Neural Engine — preview label)`, "dim");
-      }
-      line(formatAnswer(data), "out");
+      retrievalMetric.textContent = data.retrieval_mode === "keyword" ? "Keyword only" : "Hybrid / keyword";
+      appendEvent("Answer", `Q: ${question}\n\n${formatAnswer(data)}`);
     }
 
     async function runReview(focus) {
@@ -243,56 +1382,57 @@
       const data = await api(`/documents/${docId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          focus: focus || "risks, gaps, key facts, and missing evidence",
-        }),
+        body: JSON.stringify({ focus: focus || "risks, gaps, key facts, and missing evidence" }),
       });
-      line(formatReview(data), "out");
+      appendEvent("Review", formatReview(data));
     }
 
     async function runSmoke() {
       const data = await api("/evals/smoke");
       data.forEach((item) => {
-        line(`${item.passed ? "ok" : "FAIL"}  ${item.name}`, item.passed ? "out" : "err");
+        appendEvent("Smoke", `${item.passed ? "ok" : "FAIL"}  ${item.name}${item.details ? `\n${item.details}` : ""}`);
       });
     }
 
     async function handleCommand(raw) {
       const input = raw.trim();
       if (!input) return;
-      line(`evidenceos> ${input}`, "dim");
+      appendEvent("Command", input);
 
       const parts = input.split(/\s+/);
       const cmd = parts[0].toLowerCase();
       const rest = input.slice(parts[0].length).trim();
 
       try {
-        if (cmd === "help" || cmd === "?") printHelp();
-        else if (cmd === "clear") logEl.innerHTML = "";
-        else if (cmd === "health") {
+        if (cmd === "help" || cmd === "?") {
+          appendEvent("Help", "help | health | health npu | health cpu | upload | use <doc-id> | ask <question> | review [focus] | smoke | clear");
+        } else if (cmd === "clear") {
+          feedEl.innerHTML = "";
+        } else if (cmd === "health") {
           if (rest === "npu") await runHealth(true);
           else if (rest === "cpu") await runHealth(false);
           else await runHealth();
-        }
-        else if (cmd === "upload") {
+        } else if (cmd === "upload") {
           pendingUpload = true;
           fileInput.click();
-        }
-        else if (cmd === "use") {
+        } else if (cmd === "use") {
           if (!rest) throw new Error("usage: use <document-id>");
           docId = rest.split(/\s+/)[0];
           localStorage.setItem("evidenceos_doc_id", docId);
-          line(`active doc: ${docId}`, "out");
-        }
-        else if (cmd === "ask") {
+          setDocState("Manual document selection", docId, lastIndexStatus, currentDocDevice.textContent);
+          appendEvent("Document", `active doc: ${docId}`);
+        } else if (cmd === "ask") {
           if (!rest) throw new Error("usage: ask <question>");
           await runAsk(rest);
+        } else if (cmd === "review") {
+          await runReview(rest);
+        } else if (cmd === "smoke") {
+          await runSmoke();
+        } else {
+          throw new Error(`unknown command: ${cmd}  (type help)`);
         }
-        else if (cmd === "review") await runReview(rest);
-        else if (cmd === "smoke") await runSmoke();
-        else throw new Error(`unknown command: ${cmd}  (type help)`);
       } catch (err) {
-        line(String(err.message || err), "err");
+        appendEvent("Error", String(err.message || err));
       }
     }
 
@@ -302,24 +1442,85 @@
       try {
         await runUpload(fileInput.files[0]);
       } catch (err) {
-        line(String(err.message || err), "err");
+        appendEvent("Error", String(err.message || err));
       }
       fileInput.value = "";
     });
 
-    document.getElementById("form").addEventListener("submit", (e) => {
+    document.getElementById("commandForm").addEventListener("submit", (e) => {
       e.preventDefault();
       const value = cmdEl.value;
       cmdEl.value = "";
       handleCommand(value);
     });
 
-    line("EvidenceOS — type help", "dim");
-    line(`api: ${API_BASE}`, "dim");
-    if (URL_PREVIEW_NPU) line("URL preview=npu — Neural Engine demo mode", "dim");
-    if (docId) line(`restored doc: ${docId}`, "dim");
-    runHealth(URL_PREVIEW_NPU ? true : undefined).catch((err) => line(`offline: ${err.message}`, "err"));
-    printHelp();
+    document.querySelectorAll("[data-command]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const value = chip.getAttribute("data-command") || "";
+        if (value === "upload") {
+          pendingUpload = true;
+          fileInput.click();
+          return;
+        }
+        if (value === "help") {
+          handleCommand("help");
+          return;
+        }
+        if (value === "health") {
+          handleCommand("health");
+          return;
+        }
+        if (value === "smoke") {
+          handleCommand("smoke");
+          return;
+        }
+        if (value === "clear") {
+          handleCommand("clear");
+        }
+      });
+    });
+
+    uploadButton.addEventListener("click", () => { pendingUpload = true; fileInput.click(); });
+    chooseFileButton.addEventListener("click", () => { pendingUpload = true; fileInput.click(); });
+    smokeButton.addEventListener("click", () => handleCommand("smoke"));
+    healthButton.addEventListener("click", () => handleCommand("health"));
+    openHealthButton.addEventListener("click", () => handleCommand("health"));
+    askDemoButton.addEventListener("click", () => {
+      questionInput.focus();
+      if (!docId) appendEvent("Hint", "Upload a document first, then ask a question for cited answers.");
+    });
+    reviewDemoButton.addEventListener("click", () => {
+      focusInput.focus();
+      if (!docId) appendEvent("Hint", "Upload a document first, then generate a review.");
+    });
+    askButton.addEventListener("click", async () => {
+      const question = questionInput.value.trim();
+      if (!question) return appendEvent("Hint", "Type a question first.");
+      await runAsk(question);
+      questionInput.value = "";
+    });
+    reviewButton.addEventListener("click", async () => {
+      await runReview(focusInput.value.trim());
+    });
+
+    document.getElementById("commandForm").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        cmdEl.blur();
+      }
+    });
+
+    appendEvent("EvidenceOS", "Product shell loaded. Use the upload button, ask box, or command bar.");
+    appendEvent("API", `Base path: ${API_BASE}`);
+    if (URL_PREVIEW_NPU) appendEvent("Preview", "Neural Engine preview mode requested via ?preview=npu");
+    if (docId) appendEvent("Session", `Restored document id: ${docId}`);
+    setDocState("No document loaded", null, "waiting", "unknown");
+    docCountPill.textContent = `${uploadCount} upload${uploadCount === 1 ? "" : "s"}`;
+    loadRecentDocuments().catch((err) => {
+      docsList.innerHTML = "";
+      docsBadge.textContent = "offline";
+      appendEvent("Docs", err.message);
+    });
+    runHealth(URL_PREVIEW_NPU ? true : undefined).catch((err) => appendEvent("Offline", err.message));
   </script>
 </body>
 </html>

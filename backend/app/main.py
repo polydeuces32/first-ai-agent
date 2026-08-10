@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+import html
 import logging
 import os
 import re
+import secrets
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from threading import Lock
+from typing import Any, Deque, Dict, List, Optional
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from app.pages import PUBLIC_LEGAL_PATHS, legal_router
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import JSON, DateTime, Enum as SAEnum, Integer, String, Text, create_engine, select
@@ -34,6 +39,8 @@ MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 DEFAULT_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5500",
     "http://localhost:5500",
+    "http://127.0.0.1:8788",
+    "http://localhost:8788",
     "http://127.0.0.1:8000",
     "http://localhost:8000",
 ]
@@ -202,6 +209,23 @@ class AuditLog(Base):
     run_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, nullable=True)
     event: Mapped[str] = mapped_column(String(100), nullable=False)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ShareCard(Base):
+    __tablename__ = "share_cards"
+
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    source_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    abstained: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -435,6 +459,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(legal_router)
+PUBLIC_PATHS.update(PUBLIC_LEGAL_PATHS)
 
 
 def init_db() -> None:
@@ -902,6 +929,7 @@ def build_document_review(db: Session, document: Document, focus: str) -> Docume
 
     return DocumentReview(
         document_id=document.id,
+        tenant_slug=get_default_tenant_slug(),
         summary=summary,
         key_facts=key_facts,
         risks=risks[:10],
@@ -918,16 +946,27 @@ def startup() -> None:
 
 
 @app.get("/")
-def root() -> Dict[str, Any]:
-    return {
-        "service": "EvidenceOS",
-        "status": "running",
-        "docs": "/docs",
-        "demo": "/demo",
-        "health": "/health",
-        "ready": "/ready",
-        "inference": "/inference/health",
-    }
+def root(request: Request) -> Response:
+    accepts = request.headers.get("accept", "")
+    if "text/html" in accepts:
+        return HTMLResponse(render_landing_page())
+    return JSONResponse(
+        {
+            "service": "EvidenceOS",
+            "status": "running",
+            "try": "/try",
+            "privacy": "/privacy",
+            "support": "/support",
+            "terms": "/terms",
+            "health_disclaimer": "/health-disclaimer",
+            "ios": "/app",
+            "docs": "/docs",
+            "demo": "/demo",
+            "health": "/health",
+            "ready": "/ready",
+            "inference": "/inference/health",
+        }
+    )
 
 
 @app.get("/health")
@@ -1117,7 +1156,7 @@ def list_documents(request: Request) -> List[DocumentResponse]:
         documents = db.scalars(select(Document).order_by(Document.created_at.desc())).all()
         return [
             serialize_document(document, db.get(DocumentIndex, document.id))
-            for document in documents[-1:]
+            for document in documents[:5]
         ]
 
 
@@ -1187,6 +1226,614 @@ def review_document(document_id: str, payload: ReviewDocumentRequest) -> Documen
 
         db.commit()
         return review
+
+
+# ---------------------------------------------------------------------------
+# Public viral demo: no signup, paste text, ask, get a cited answer you can share.
+# "No evidence, no answer." Answers are extractive (the cited source text itself),
+# so there is nothing to hallucinate. Fully local, zero per-query cost.
+# ---------------------------------------------------------------------------
+
+PUBLIC_PATHS.update({"/try", "/api/demo/ask", "/api/demo/samples"})
+
+MAX_DEMO_TEXT_CHARS = 60_000
+DEMO_RATE_WINDOW_SECONDS = 60
+DEMO_RATE_MAX_REQUESTS = 20
+_demo_rate_state: Dict[str, Deque[float]] = {}
+_demo_rate_lock = Lock()
+
+PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "").rstrip("/")
+
+SAMPLE_DOCUMENTS: Dict[str, Dict[str, str]] = {
+    "nda": {
+        "title": "Mutual Non-Disclosure Agreement",
+        "suggested": "What is the term of confidentiality?",
+        "text": (
+            "This Mutual Non-Disclosure Agreement is entered into between the parties as of the Effective Date. "
+            "Each party may disclose Confidential Information to the other party solely for the purpose of evaluating a potential business relationship. "
+            "The receiving party shall protect the disclosing party's Confidential Information using the same degree of care it uses for its own confidential information, and no less than a reasonable degree of care. "
+            "The obligations of confidentiality under this Agreement shall remain in effect for a period of five (5) years from the date of disclosure. "
+            "Confidential Information does not include information that is or becomes publicly available through no fault of the receiving party. "
+            "This Agreement shall be governed by and construed in accordance with the laws of the State of Delaware. "
+            "Neither party shall be liable for any indirect, incidental, or consequential damages arising out of this Agreement. "
+            "Upon termination, the receiving party shall return or destroy all Confidential Information within thirty (30) days."
+        ),
+    },
+    "constitution": {
+        "title": "U.S. Bill of Rights (excerpt)",
+        "source_url": "https://www.archives.gov/founding-docs/bill-of-rights-transcript",
+        "suggested": "What does the Fourth Amendment protect?",
+        "text": (
+            "Amendment I. Congress shall make no law respecting an establishment of religion, or prohibiting the free exercise thereof; or abridging the freedom of speech, or of the press; or the right of the people peaceably to assemble, and to petition the Government for a redress of grievances. "
+            "Amendment II. A well regulated Militia, being necessary to the security of a free State, the right of the people to keep and bear Arms, shall not be infringed. "
+            "Amendment IV. The right of the people to be secure in their persons, houses, papers, and effects, against unreasonable searches and seizures, shall not be violated, and no Warrants shall issue, but upon probable cause, supported by Oath or affirmation, and particularly describing the place to be searched, and the persons or things to be seized. "
+            "Amendment V. No person shall be held to answer for a capital, or otherwise infamous crime, unless on a presentment or indictment of a Grand Jury, nor shall be compelled in any criminal case to be a witness against himself, nor be deprived of life, liberty, or property, without due process of law."
+        ),
+    },
+    "bitcoin": {
+        "title": "Bitcoin Whitepaper (abstract)",
+        "source_url": "https://bitcoin.org/bitcoin.pdf",
+        "suggested": "How does the network solve the double-spending problem?",
+        "text": (
+            "A purely peer-to-peer version of electronic cash would allow online payments to be sent directly from one party to another without going through a financial institution. "
+            "Digital signatures provide part of the solution, but the main benefits are lost if a trusted third party is still required to prevent double-spending. "
+            "We propose a solution to the double-spending problem using a peer-to-peer network. "
+            "The network timestamps transactions by hashing them into an ongoing chain of hash-based proof-of-work, forming a record that cannot be changed without redoing the proof-of-work. "
+            "The longest chain not only serves as proof of the sequence of events witnessed, but proof that it came from the largest pool of CPU power. "
+            "As long as a majority of CPU power is controlled by nodes that are not cooperating to attack the network, they will generate the longest chain and outpace attackers."
+        ),
+    },
+    "lease": {
+        "title": "Residential Lease Agreement",
+        "suggested": "How much is the security deposit?",
+        "text": (
+            "This Residential Lease Agreement is made between the Landlord and the Tenant for the property described herein. "
+            "The lease term begins on the first day of the month and continues for a period of twelve (12) months. "
+            "The monthly rent is two thousand four hundred dollars ($2,400), due on the first day of each month. "
+            "The Tenant shall pay a security deposit of two thousand four hundred dollars ($2,400) before taking occupancy. "
+            "A late fee of fifty dollars ($50) applies to any rent payment received more than five days after the due date. "
+            "The Tenant is responsible for electricity, gas, and internet; the Landlord covers water and trash collection. "
+            "Pets are not permitted without prior written consent from the Landlord. "
+            "The security deposit will be returned within thirty (30) days of move-out, less any deductions for damage beyond normal wear and tear."
+        ),
+    },
+    "privacy": {
+        "title": "Website Privacy Policy",
+        "suggested": "What personal data is collected?",
+        "text": (
+            "This Privacy Policy explains how we collect, use, and protect your information when you use our service. "
+            "We collect personal data that you provide directly, including your name, email address, and billing information. "
+            "We automatically collect device information, IP address, browser type, and usage data through cookies and similar technologies. "
+            "We use your information to provide and improve the service, process payments, and send service-related communications. "
+            "We do not sell your personal data to third parties. "
+            "We share data with service providers who process it on our behalf under strict confidentiality obligations. "
+            "You have the right to access, correct, or delete your personal data, and to opt out of marketing communications at any time. "
+            "We retain personal data only as long as necessary to provide the service or as required by law."
+        ),
+    },
+    "study": {
+        "title": "Clinical Study Abstract",
+        "suggested": "What was the primary outcome?",
+        "text": (
+            "This randomized controlled trial evaluated the efficacy of a 12-week exercise program in adults with type 2 diabetes. "
+            "A total of 480 participants were randomly assigned to either the intervention group or the control group. "
+            "The primary outcome was the change in HbA1c levels from baseline to week 12. "
+            "The intervention group showed a mean reduction in HbA1c of 0.8 percentage points, compared with 0.2 in the control group. "
+            "Secondary outcomes included body weight, blood pressure, and self-reported quality of life. "
+            "No serious adverse events were attributed to the exercise program. "
+            "The authors concluded that structured exercise significantly improves glycemic control in this population."
+        ),
+    },
+    "diabetes_manage": {
+        "title": "Managing Type 2 Diabetes at Home (CDC)",
+        "source_url": "https://www.cdc.gov/diabetes/caring/steps-to-help-you-stay-healthy-with-diabetes.html",
+        "suggested": "What can I do at home to manage type 2 diabetes?",
+        "text": (
+            "While there is no cure for type 2 diabetes, you can manage it with healthy habits and support from your health care team. "
+            "A successful diabetes management plan includes healthy eating, regular physical activity, medical support, and emotional support. "
+            "Eating foods lower in carbohydrates, added sugars, saturated fat, and sodium is key to managing your blood sugar. "
+            "Try the plate method: fill half your plate with nonstarchy vegetables, one quarter with lean protein, and one quarter with carbohydrate foods. "
+            "Set a goal to be physically active for 30 minutes most days of the week, and start slow with a 10-minute walk three times a day. "
+            "Twice a week, work to increase your muscle strength using stretch bands, yoga, or heavy gardening. "
+            "Plan your food each week so you have healthy options at home, and carry healthy snacks like baby carrots, sliced apples, or nuts when you go out. "
+            "Keep track of your blood sugar and your numbers, and ask your health care team how often to check. "
+            "Talk to your health care team about managing your A1C, blood pressure, and cholesterol to lower your chance of heart attack, stroke, and other complications."
+        ),
+    },
+    "prediabetes": {
+        "title": "Preventing Type 2 Diabetes (CDC National DPP)",
+        "source_url": "https://www.cdc.gov/diabetes/prevention-type-2/prediabetes-prevent-type-2.html",
+        "suggested": "How can I lower my risk of type 2 diabetes?",
+        "text": (
+            "More than 2 in 5 American adults have prediabetes, which raises the risk of type 2 diabetes and other health problems. "
+            "If you have prediabetes, you can lower your risk of developing type 2 diabetes by losing a small amount of weight and getting regular physical activity. "
+            "A small amount of weight loss means around 5 to 7 percent of your body weight, which is about 10 to 14 pounds for a person who weighs 200 pounds. "
+            "Regular physical activity means getting at least 150 minutes a week of brisk walking or a similar activity, which is 30 minutes a day, 5 days a week. "
+            "In the Diabetes Prevention Program research study, these lifestyle changes reduced the risk of developing type 2 diabetes by 58 percent, and by 71 percent in adults over age 60. "
+            "The CDC-led National Diabetes Prevention Program is a yearlong lifestyle change program that helps participants eat healthier, add physical activity, and reduce stress. "
+            "Taking metformin was also found to help prevent type 2 diabetes, though to a lesser degree than the lifestyle change program."
+        ),
+    },
+    "offer": {
+        "title": "Employment Offer Letter",
+        "suggested": "What is the annual salary?",
+        "text": (
+            "We are pleased to offer you the position of Senior Software Engineer at the Company. "
+            "Your annual base salary will be one hundred sixty-five thousand dollars ($165,000), paid on a semi-monthly basis. "
+            "You will be eligible for an annual performance bonus targeted at fifteen percent (15%) of your base salary. "
+            "Your anticipated start date is the first Monday of next month, contingent on a background check. "
+            "You will receive a one-time signing bonus of ten thousand dollars ($10,000), subject to a one-year repayment clause. "
+            "Benefits include medical, dental, and vision coverage, and a 401(k) plan with a four percent company match. "
+            "Employment with the Company is at-will and may be terminated by either party at any time."
+        ),
+    },
+    "sla": {
+        "title": "Service Level Agreement",
+        "suggested": "What uptime is guaranteed?",
+        "text": (
+            "This Service Level Agreement defines the availability commitments for the hosted platform. "
+            "The provider guarantees 99.9% monthly uptime for the production service, excluding scheduled maintenance. "
+            "Scheduled maintenance will be communicated at least 48 hours in advance and performed during off-peak hours. "
+            "If monthly uptime falls below 99.9%, the customer is eligible for service credits applied to the next invoice. "
+            "A response to critical severity incidents is guaranteed within one hour, twenty-four hours a day. "
+            "Service credits are capped at thirty percent (30%) of the monthly fee for the affected service. "
+            "Uptime is measured at the load balancer and excludes failures caused by the customer's own configuration."
+        ),
+    },
+    "nyc_business": {
+        "title": "NYC: Opening a Business (NYC Small Business Services)",
+        "source_url": "https://nyc-business.nyc.gov/nycbusiness/business-services/initiatives/opening-a-business-in-nyc",
+        "suggested": "What licenses and permits do I need to open a business?",
+        "text": (
+            "The NYC Department of Small Business Services offers free resources to help you start a business in New York City. "
+            "Use the Step by Step tool to get a customized list of the City, State, and Federal licenses and permits you need to operate your business. "
+            "The Step by Step tool takes about 10 minutes and asks basic questions about your business. "
+            "You can apply online for licenses, permits, and certifications using the License Lookup tool and index. "
+            "Create an NYC.gov account and a Business Profile to save your progress and keep track of your business transactions. "
+            "The Business Profile asks for your legal business name, your DBA if necessary, and your Tax ID number, which is either an Employer Identification Number or a Social Security Number. "
+            "NYC Business Solutions Centers, located in all five boroughs, can connect you to free one-on-one legal services and help you secure financing. "
+            "You can request a free business consultation by calling the hotline at 888-SBS-4NYC, which is 888-727-4692. "
+            "The Incentives Estimator is an online questionnaire that shows whether your business qualifies for money-saving city, state, and federal incentives."
+        ),
+    },
+}
+
+
+class PublicAskRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000)
+    text: Optional[str] = Field(default=None, max_length=MAX_DEMO_TEXT_CHARS)
+    sample_id: Optional[str] = Field(default=None, max_length=64)
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_demo_rate_limit(request: Request) -> None:
+    ip = _client_ip(request)
+    now = time.monotonic()
+    with _demo_rate_lock:
+        bucket = _demo_rate_state.setdefault(ip, deque())
+        while bucket and now - bucket[0] > DEMO_RATE_WINDOW_SECONDS:
+            bucket.popleft()
+        if len(bucket) >= DEMO_RATE_MAX_REQUESTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Take a breath and try again in a minute.",
+            )
+        bucket.append(now)
+
+
+_DEMO_ORDINALS = {
+    "first": "i", "second": "ii", "third": "iii", "fourth": "iv", "fifth": "v",
+    "sixth": "vi", "seventh": "vii", "eighth": "viii", "ninth": "ix", "tenth": "x",
+}
+_DEMO_SYNONYMS = {
+    "protect": "secure", "protects": "secure", "protected": "secure",
+    "protection": "secure", "safeguard": "secure",
+}
+
+
+def expand_question_terms(question: str) -> set[str]:
+    """Light query expansion so natural questions match real-world phrasing
+    (e.g. 'Fourth Amendment' -> 'Amendment IV', 'protect' -> 'secure')."""
+    terms = tokenize(question)
+    extra: set[str] = set()
+    for term in terms:
+        if term in _DEMO_ORDINALS:
+            extra.add(_DEMO_ORDINALS[term])
+        if term in _DEMO_SYNONYMS:
+            extra.add(_DEMO_SYNONYMS[term])
+    return terms | extra
+
+
+def score_sentence_demo(q_terms: set[str], question: str, sentence: str) -> int:
+    s_terms = tokenize(sentence)
+    if not q_terms or not s_terms:
+        return 0
+    overlap = q_terms & s_terms
+    exact_bonus = 2 if question.lower() in sentence.lower() else 0
+    return len(overlap) + exact_bonus
+
+
+def build_public_answer(
+    title: str,
+    text: str,
+    question: str,
+    source_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Strict extractive answer. If nothing in the text genuinely matches the
+    question, we abstain instead of guessing. The answer is the cited evidence."""
+    sentences = split_sentences(text)
+    q_terms = expand_question_terms(question)
+    scored = [
+        (score_sentence_demo(q_terms, question, sentence), sentence)
+        for sentence in sentences
+    ]
+    scored = [item for item in scored if item[0] > 0]
+    scored.sort(key=lambda item: item[0], reverse=True)
+
+    if not scored:
+        return {
+            "source_title": title,
+            "source_url": source_url,
+            "question": question,
+            "answer": "No supporting evidence was found in this document. EvidenceOS will not guess.",
+            "citations": [],
+            "confidence": 0,
+            "abstained": True,
+        }
+
+    top = scored[:3]
+    citations = [
+        {
+            "source_text": sentence[:600],
+            "page": infer_page(sentence),
+            "score": score,
+            "verified": True,
+            "source_url": source_url,
+        }
+        for score, sentence in top
+    ]
+    evidence_text = " ".join(item["source_text"] for item in citations)
+    confidence = min(95, 45 + sum(score for score, _ in top) * 8)
+
+    return {
+        "source_title": title,
+        "source_url": source_url,
+        "question": question,
+        "answer": evidence_text[:1200],
+        "citations": citations,
+        "confidence": confidence,
+        "abstained": False,
+    }
+
+
+def _share_url(request: Request, share_id: str) -> str:
+    base = PUBLIC_SITE_URL or str(request.base_url).rstrip("/")
+    return f"{base}/s/{share_id}"
+
+
+@app.get("/api/demo/samples")
+def demo_samples() -> List[Dict[str, Optional[str]]]:
+    return [
+        {
+            "id": key,
+            "title": value["title"],
+            "suggested": value["suggested"],
+            "source_url": value.get("source_url"),
+            "text": value["text"],
+        }
+        for key, value in SAMPLE_DOCUMENTS.items()
+    ]
+
+
+@app.post("/api/demo/ask")
+def demo_ask(payload: PublicAskRequest, request: Request) -> Dict[str, Any]:
+    _enforce_demo_rate_limit(request)
+
+    source_url: Optional[str] = None
+    if payload.sample_id:
+        sample = SAMPLE_DOCUMENTS.get(payload.sample_id)
+        if not sample:
+            raise HTTPException(status_code=404, detail="unknown sample")
+        title, text = sample["title"], sample["text"]
+        source_url = sample.get("source_url")
+    elif payload.text and payload.text.strip():
+        title = "Pasted text"
+        text = payload.text.strip()[:MAX_DEMO_TEXT_CHARS]
+    else:
+        raise HTTPException(status_code=400, detail="Provide text or a sample_id.")
+
+    result = build_public_answer(title, text, payload.question.strip(), source_url=source_url)
+
+    share_id = secrets.token_urlsafe(9)[:12]
+    with SessionLocal() as db:
+        db.add(
+            ShareCard(
+                id=share_id,
+                source_title=result["source_title"],
+                source_url=result.get("source_url"),
+                question=result["question"],
+                answer=result["answer"],
+                citations=result["citations"],
+                confidence=result["confidence"],
+                abstained=1 if result["abstained"] else 0,
+            )
+        )
+        db.commit()
+
+    result["share_id"] = share_id
+    result["share_url"] = _share_url(request, share_id)
+    return result
+
+
+@app.get("/api/share/{share_id}")
+def get_share(share_id: str) -> Dict[str, Any]:
+    with SessionLocal() as db:
+        card = db.get(ShareCard, share_id)
+        if card is None:
+            raise HTTPException(status_code=404, detail="share not found")
+        return {
+            "share_id": card.id,
+            "source_title": card.source_title,
+            "source_url": card.source_url,
+            "question": card.question,
+            "answer": card.answer,
+            "citations": card.citations,
+            "confidence": card.confidence,
+            "abstained": bool(card.abstained),
+            "created_at": card.created_at,
+        }
+
+
+_BASE_STYLE = """
+  :root{--bg:#0a0b0f;--panel:#12141c;--line:#23262f;--fg:#e7e9ee;--muted:#9aa0ad;
+    --accent:#3ddc97;--accent2:#5b8cff;--warn:#ffb454;--danger:#ff5c7a;}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 50% -10%,#161a2b 0%,var(--bg) 55%);
+    color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,sans-serif;}
+  a{color:var(--accent2);text-decoration:none}
+  .wrap{max-width:820px;margin:0 auto;padding:28px 20px 80px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.2px}
+  .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 14px var(--accent)}
+  .hero h1{font-size:clamp(34px,6vw,58px);line-height:1.02;margin:26px 0 10px;font-weight:800;letter-spacing:-1px}
+  .hero h1 span{color:var(--accent)}
+  .sub{color:var(--muted);font-size:18px;max-width:600px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:22px}
+  textarea,input{width:100%;background:#0d0f16;color:var(--fg);border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;font:15px/1.5 inherit;outline:none}
+  textarea{min-height:120px;resize:vertical}
+  textarea:focus,input:focus{border-color:var(--accent2)}
+  label{display:block;font-size:13px;color:var(--muted);margin:14px 0 6px;text-transform:uppercase;letter-spacing:.08em}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{background:#1a1d28;border:1px solid var(--line);color:var(--fg);padding:7px 12px;border-radius:999px;
+    font-size:13px;cursor:pointer;transition:.15s}
+  .chip:hover{border-color:var(--accent);color:var(--accent)}
+  .btn{background:var(--accent);color:#06281c;border:none;border-radius:10px;padding:13px 22px;
+    font-weight:700;font-size:15px;cursor:pointer;margin-top:16px;width:100%}
+  .btn:disabled{opacity:.5;cursor:wait}
+  .ans{margin-top:18px;display:none}
+  .badge{display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;letter-spacing:.04em}
+  .badge.ok{background:rgba(61,220,151,.14);color:var(--accent)}
+  .badge.no{background:rgba(255,92,122,.14);color:var(--danger)}
+  .answer-text{font-size:18px;margin:12px 0 4px}
+  .cite{background:#0d0f16;border-left:3px solid var(--accent2);border-radius:6px;padding:10px 14px;margin:10px 0;color:#cfd3dc;font-size:14px}
+  .cite b{color:var(--accent2)}
+  .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+  .doc-view{background:#0d0f16;border:1px solid var(--line);border-radius:10px;padding:14px;margin:8px 0 4px;
+    max-height:260px;overflow:auto;font-size:14px;line-height:1.8;color:#aeb4c0}
+  .doc-view mark{background:rgba(61,220,151,.22);color:#eafff5;padding:1px 3px;border-radius:3px;box-shadow:0 0 0 1px rgba(61,220,151,.35)}
+  .doc-view .lbl{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+  .meta{color:var(--muted);font-size:13px;margin-top:8px}
+  .share{display:flex;gap:8px;margin-top:14px;align-items:center}
+  .share input{font-size:13px}
+  .foot{color:var(--muted);font-size:13px;margin-top:40px;text-align:center}
+  .pillrow{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;color:var(--muted);font-size:14px}
+  .pillrow b{color:var(--fg)}
+"""
+
+_LANDING_HTML = """<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EvidenceOS — No evidence, no answer</title>
+<meta name="description" content="Ask questions about any document and get answers where every sentence is a verified citation. If there's no evidence, EvidenceOS refuses to guess. Local-first, no signup.">
+<meta property="og:title" content="EvidenceOS — No evidence, no answer">
+<meta property="og:description" content="An AI that refuses to make things up. Every answer is a verified citation, or no answer at all.">
+<meta property="og:type" content="website">
+<style>__STYLE__</style></head><body><div class="wrap">
+  <div class="brand"><span class="dot"></span> EvidenceOS</div>
+  <div class="hero">
+    <h1>No evidence.<br><span>No answer.</span></h1>
+    <p class="sub">Most AI makes things up. EvidenceOS does the opposite: every sentence it returns is a verified citation from your document — and when there's no evidence, it refuses to guess. Local-first. No signup.</p>
+  </div>
+
+  <div class="card">
+    <label>1 · Pick an example or paste your own text</label>
+    <div class="row" id="samples"></div>
+    <label style="margin-top:16px">Your document</label>
+    <textarea id="text" placeholder="Paste a contract, paper, policy, lab result, or any text here — then ask a question about it below."></textarea>
+    <p class="hint">✏️ Pick an example above to load a real document, or paste your own. You can edit this freely.</p>
+    <label>2 · Ask a question</label>
+    <input id="q" placeholder="Ask anything about the document above…">
+    <button class="btn" id="ask">Get a cited answer →</button>
+
+    <div class="ans" id="ans">
+      <span class="badge" id="badge"></span>
+      <p class="answer-text" id="answer"></p>
+      <div id="cites"></div>
+      <div class="doc-view" id="sourceDoc" style="display:none"></div>
+      <div class="meta" id="conf"></div>
+      <div class="share" id="shareRow" style="display:none">
+        <input id="shareUrl" readonly>
+        <button class="chip" id="copy">Copy link</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pillrow">
+    <div>🔒 <b>Local-first</b> — your docs never leave the box</div>
+    <div>🧾 <b>Every claim cited</b></div>
+    <div>🚫 <b>Refuses to hallucinate</b></div>
+  </div>
+  <p class="foot">EvidenceOS · evidence-verified document intelligence<br>
+  Examples are for demonstration. Health examples cite public-health sources (CDC/NIH) and are not medical advice.<br>
+  <a href="/privacy">Privacy</a> · <a href="/support">Support</a> · <a href="/terms">Terms</a> · <a href="/health-disclaimer">Health</a> · <a href="/app">iOS</a></p>
+</div>
+<script>
+const SAMPLES=[
+ {id:'nyc_business',sample:'nyc_business',title:'🗽 Open a business in NYC',q:'What licenses and permits do I need to open a business?'},
+ {id:'nda',sample:'nda',title:'📄 NDA contract',q:'What is the term of confidentiality?'},
+ {id:'lease',sample:'lease',title:'🏠 Lease agreement',q:'How much is the security deposit?'},
+ {id:'privacy',sample:'privacy',title:'🔐 Privacy policy',q:'What personal data is collected?'},
+ {id:'offer',sample:'offer',title:'💼 Job offer letter',q:'What is the annual salary?'},
+ {id:'sla',sample:'sla',title:'⏱️ SLA uptime',q:'What uptime is guaranteed?'},
+ {id:'diabetes_manage',sample:'diabetes_manage',title:'🩸 Manage diabetes',q:'What can I do at home to manage type 2 diabetes?'},
+ {id:'prediabetes',sample:'prediabetes',title:'🍎 Prevent diabetes',q:'How can I lower my risk of type 2 diabetes?'},
+ {id:'study',sample:'study',title:'🧬 Clinical study',q:'What was the primary outcome?'},
+ {id:'constitution',sample:'constitution',title:'⚖️ Bill of Rights',q:'What does the Fourth Amendment protect?'},
+ {id:'bitcoin',sample:'bitcoin',title:'₿ Bitcoin whitepaper',q:'How does it solve double-spending?'},
+ {id:'trap',sample:'bitcoin',title:'🧪 Watch it refuse',q:'What is the price of Bitcoin today?'},
+];
+const sEl=document.getElementById('samples');
+const ta=document.getElementById('text');
+const TEXTMAP={};
+let queriedText='';
+// Load full example text so picking a chip shows the real document.
+fetch('/api/demo/samples').then(r=>r.json()).then(list=>{
+ list.forEach(s=>{if(s.text)TEXTMAP[s.id]=s.text;});
+ const p=new URLSearchParams(location.search);const run=p.get('run');
+ if(run&&TEXTMAP[run]){const s=SAMPLES.find(x=>x.sample===run||x.id===run);
+   document.getElementById('q').value=p.get('q')||(s?s.q:'');ta.dataset.sample=run;ta.value=TEXTMAP[run];
+   document.getElementById('ask').click();}
+}).catch(()=>{});
+SAMPLES.forEach(s=>{const b=document.createElement('div');b.className='chip';b.textContent=s.title;
+ b.onclick=()=>{document.getElementById('q').value=s.q;ta.dataset.sample=s.sample;
+   ta.value=TEXTMAP[s.sample]||'';ta.scrollTop=0;};sEl.appendChild(b);});
+ta.addEventListener('input',e=>{delete e.target.dataset.sample;});
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function normWs(s){return (s||'').replace(/\\s+/g,' ').trim();}
+function highlightDoc(docText,cites){
+ let html=esc(normWs(docText));
+ (cites||[]).forEach(c=>{const m=esc(normWs(c.source_text));if(!m)return;
+   const idx=html.indexOf(m);if(idx>=0){html=html.slice(0,idx)+'<mark>'+m+'</mark>'+html.slice(idx+m.length);}});
+ return html;
+}
+document.getElementById('ask').onclick=async()=>{
+ const q=document.getElementById('q').value.trim();
+ if(!q){alert('Type a question first.');return;}
+ const body={question:q};
+ if(ta.dataset.sample){body.sample_id=ta.dataset.sample;queriedText=TEXTMAP[ta.dataset.sample]||ta.value;}
+ else{const t=ta.value.trim();if(!t){alert('Paste some text or pick an example.');return;}body.text=t;queriedText=t;}
+ const btn=document.getElementById('ask');btn.disabled=true;btn.textContent='Verifying…';
+ try{
+  const r=await fetch('/api/demo/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){alert(d.detail||'Something went wrong');return;}
+  render(d);
+ }finally{btn.disabled=false;btn.textContent='Get a cited answer →';}
+};
+function render(d){
+ document.getElementById('ans').style.display='block';
+ const badge=document.getElementById('badge');
+ if(d.abstained){badge.className='badge no';badge.textContent='NO EVIDENCE — REFUSED TO ANSWER';}
+ else{badge.className='badge ok';badge.textContent='VERIFIED · '+d.confidence+'% confidence';}
+ document.getElementById('answer').textContent=d.answer;
+ const c=document.getElementById('cites');c.innerHTML='';
+ (d.citations||[]).forEach((ct,i)=>{const el=document.createElement('div');el.className='cite';
+   el.innerHTML='<b>['+(i+1)+']</b> '+esc(ct.source_text);c.appendChild(el);});
+ const sd=document.getElementById('sourceDoc');
+ if(queriedText){
+   const lbl=d.abstained?'Source document — no matching evidence found':'Source document — cited sentences highlighted';
+   sd.innerHTML='<span class="lbl">'+lbl+'</span>'+highlightDoc(queriedText,d.citations);
+   sd.style.display='block';
+   const mk=sd.querySelector('mark');if(mk)sd.scrollTop=Math.max(0,mk.offsetTop-sd.offsetTop-40);
+ }else{sd.style.display='none';}
+ const conf=document.getElementById('conf');
+ if(d.abstained){conf.textContent='EvidenceOS will not answer without a verified source.';}
+ else if(d.source_url){conf.innerHTML='Source: <a href="'+d.source_url+'" target="_blank" rel="noopener nofollow">'+esc(d.source_title)+'</a> ✓';}
+ else{conf.textContent='Source: '+d.source_title;}
+ if(d.share_url){const sr=document.getElementById('shareRow');sr.style.display='flex';
+   document.getElementById('shareUrl').value=d.share_url;}
+}
+document.getElementById('copy').onclick=()=>{const i=document.getElementById('shareUrl');
+ i.select();navigator.clipboard.writeText(i.value);document.getElementById('copy').textContent='Copied!';};
+</script></body></html>"""
+
+
+def render_landing_page() -> str:
+    return _LANDING_HTML.replace("__STYLE__", _BASE_STYLE)
+
+
+def render_share_page(card: "ShareCard", share_url: str) -> str:
+    abstained = bool(card.abstained)
+    q = html.escape(card.question)
+    ans = html.escape(card.answer)
+    title = html.escape(card.source_title)
+    og_desc = html.escape((card.answer[:180] + "…") if len(card.answer) > 180 else card.answer)
+    badge = (
+        '<span class="badge no">NO EVIDENCE — REFUSED TO ANSWER</span>'
+        if abstained
+        else f'<span class="badge ok">VERIFIED · {int(card.confidence)}% confidence</span>'
+    )
+    cites = ""
+    for i, ct in enumerate(card.citations or [], start=1):
+        cites += f'<div class="cite"><b>[{i}]</b> {html.escape(str(ct.get("source_text", "")))}</div>'
+
+    if card.source_url:
+        safe_url = html.escape(card.source_url, quote=True)
+        source_html = f'<p class="meta">Source: <a href="{safe_url}" target="_blank" rel="noopener nofollow">{title}</a> ✓</p>'
+    else:
+        source_html = f'<p class="meta">Source: {title}</p>'
+
+    template = """<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>__Q__ — EvidenceOS</title>
+<meta name="description" content="__OGDESC__">
+<meta property="og:title" content="EvidenceOS verified: __Q__">
+<meta property="og:description" content="__OGDESC__">
+<meta property="og:type" content="article">
+<meta name="twitter:card" content="summary_large_image">
+<style>__STYLE__</style></head><body><div class="wrap">
+  <div class="brand"><span class="dot"></span> EvidenceOS</div>
+  <div class="card" style="margin-top:26px">
+    __BADGE__
+    <p class="meta" style="margin-top:14px">Question</p>
+    <p class="answer-text" style="font-weight:700">__Q__</p>
+    <p class="meta">Answer (verified citations only)</p>
+    <p class="answer-text">__ANS__</p>
+    __CITES__
+    __SOURCE__
+  </div>
+  <a class="btn" href="/try" style="display:block;text-align:center;text-decoration:none">Try it on your own document →</a>
+  <p class="foot">An AI that refuses to make things up. Every answer is a verified citation — or no answer at all.</p>
+</div></body></html>"""
+    return (
+        template.replace("__STYLE__", _BASE_STYLE)
+        .replace("__OGDESC__", og_desc)
+        .replace("__BADGE__", badge)
+        .replace("__CITES__", cites)
+        .replace("__SOURCE__", source_html)
+        .replace("__ANS__", ans)
+        .replace("__TITLE__", title)
+        .replace("__Q__", q)
+    )
+
+
+@app.get("/s/{share_id}", response_class=HTMLResponse)
+def share_page(share_id: str, request: Request) -> HTMLResponse:
+    with SessionLocal() as db:
+        card = db.get(ShareCard, share_id)
+    if card is None:
+        return HTMLResponse(render_landing_page(), status_code=404)
+    return HTMLResponse(render_share_page(card, _share_url(request, share_id)))
+
+
+@app.get("/try", response_class=HTMLResponse)
+def try_page() -> HTMLResponse:
+    return HTMLResponse(render_landing_page())
 
 
 @app.post("/runs", response_model=RunResponse)

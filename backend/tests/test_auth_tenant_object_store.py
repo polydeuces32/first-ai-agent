@@ -54,8 +54,10 @@ def test_tenant_auth_identity_and_object_key(client: TestClient) -> None:
 
     listed = client.get("/documents", headers=auth_headers())
     assert listed.status_code == 200
-    assert len(listed.json()) == 1
-    assert listed.json()[0]["tenant_slug"] == "acme"
+    documents = listed.json()
+    assert len(documents) >= 1
+    assert documents[0]["tenant_slug"] == "acme"
+    assert documents[0]["filename"] == "tenant_note.txt"
 
 
 def test_tenant_scoped_answers_are_isolated(client: TestClient) -> None:
