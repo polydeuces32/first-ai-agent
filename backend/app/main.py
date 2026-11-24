@@ -830,7 +830,10 @@ def build_document_answer(db: Session, document: Document, question: str) -> Doc
         document_id=document.id,
         tenant_slug=get_default_tenant_slug(),
         question=question,
-        answer=f"Based on verified evidence from the uploaded document: {evidence_text[:1200]}",
+        answer=__import__(
+            "app.inference.llama_client",
+            fromlist=["generate_answer"],
+        ).generate_answer(question, evidence_text[:4000]),
         citations=citations,
         confidence=confidence,
         abstained=False,
